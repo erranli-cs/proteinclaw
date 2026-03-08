@@ -30,6 +30,7 @@ SCHEMAS: dict[str, dict] = {
             "sources": list,
             "annotations": dict,
             "structures": list,
+            "literature": list,
             "warnings": list,
         }
     },

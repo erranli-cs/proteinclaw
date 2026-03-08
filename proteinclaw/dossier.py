@@ -22,7 +22,28 @@ HER2_FIXTURE = {
         {"pdb_id": "6OGE", "description": "HER2 extracellular domain antibody complex"},
         {"pdb_id": "7MN8", "description": "HER2-related extracellular complex"},
     ],
+    "literature": [
+        {
+            "source": "bootstrap_fixture",
+            "title": "HER2 extracellular targeting remains a relevant binder-design context.",
+            "identifier": "fixture-her2-1",
+            "year": 2026,
+            "url": None,
+            "reason": "Bootstrap literature placeholder for offline tests.",
+        },
+        {
+            "source": "bootstrap_fixture",
+            "title": "Known HER2 therapeutic epitope competition is a valid mechanistic branch.",
+            "identifier": "fixture-her2-2",
+            "year": 2026,
+            "url": None,
+            "reason": "Bootstrap literature placeholder for offline tests.",
+        },
+    ],
 }
+
+
+BINDER_TERMS = ("binder", "binding", "antibody", "nanobody", "miniprotein", "protein")
 
 
 def _fetch_json(url: str) -> dict:
@@ -55,6 +76,62 @@ def fetch_pdb_structures(query: str) -> tuple[list[dict], dict]:
     return results, {"source": "RCSB PDB", "query": query, "url": url, "retrieved_at": utc_now()}
 
 
+def fetch_europe_pmc_literature(query: str, limit: int = 3) -> tuple[list[dict], dict]:
+    url = (
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+        f"?query={urllib.parse.quote(query)}&format=json&pageSize={limit}"
+    )
+    payload = _fetch_json(url)
+    results = []
+    for item in (payload.get("resultList") or {}).get("result", []):
+        results.append(
+            {
+                "source": "Europe PMC",
+                "title": item.get("title"),
+                "identifier": item.get("id") or item.get("pmid") or item.get("doi"),
+                "year": item.get("pubYear"),
+                "url": f"https://europepmc.org/article/MED/{item['pmid']}" if item.get("pmid") else None,
+                "reason": "Biomedical literature enrichment",
+            }
+        )
+    return results, {"source": "Europe PMC", "query": query, "url": url, "retrieved_at": utc_now()}
+
+
+def fetch_openalex_literature(query: str, limit: int = 3) -> tuple[list[dict], dict]:
+    url = f"https://api.openalex.org/works?search={urllib.parse.quote(query)}&per-page={limit}"
+    payload = _fetch_json(url)
+    results = []
+    for item in payload.get("results", []):
+        results.append(
+            {
+                "source": "OpenAlex",
+                "title": item.get("title"),
+                "identifier": item.get("id"),
+                "year": item.get("publication_year"),
+                "url": item.get("id"),
+                "reason": "Scholarly metadata enrichment",
+            }
+        )
+    return results, {"source": "OpenAlex", "query": query, "url": url, "retrieved_at": utc_now()}
+
+
+def _filter_literature_hits(results: list[dict], keywords: list[str], allow_unfiltered_fallback: bool = False) -> list[dict]:
+    filtered = []
+    normalized_keywords = [item.lower() for item in keywords if item]
+    for item in results:
+        title = (item.get("title") or "").lower()
+        if not title:
+            continue
+        if not any(keyword in title for keyword in normalized_keywords):
+            continue
+        if not any(term in title for term in BINDER_TERMS):
+            continue
+        filtered.append(item)
+    if filtered:
+        return filtered
+    return results if allow_unfiltered_fallback else []
+
+
 def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False) -> dict:
     identifier = spec["target"]["identifier"]
     target_name = spec["target"]["name"]
@@ -65,19 +142,26 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
     warnings: list[str] = []
     annotations: dict = {}
     structures: list[dict] = []
+    literature: list[dict] = []
 
     if cache_path.exists():
         payload = json.loads(cache_path.read_text(encoding="utf-8"))
-        validate_record("TargetDossier", payload)
-        return payload
+        try:
+            validate_record("TargetDossier", payload)
+            return payload
+        except (TypeError, ValueError):
+            cache_path.unlink()
+            warnings.append("Discarded stale cached dossier due to schema mismatch.")
 
     if use_fixture:
         uniprot_payload = HER2_FIXTURE["uniprot"]
         structures = HER2_FIXTURE["structures"]
+        literature = HER2_FIXTURE["literature"]
         sources.extend(
             [
                 {"source": "bootstrap_fixture", "identifier": identifier, "retrieved_at": utc_now()},
                 {"source": "bootstrap_fixture", "identifier": "RCSB HER2 fixture", "retrieved_at": utc_now()},
+                {"source": "bootstrap_fixture", "identifier": "HER2 literature fixture", "retrieved_at": utc_now()},
             ]
         )
     else:
@@ -97,6 +181,29 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
             structures = HER2_FIXTURE["structures"] if identifier == "P04626" else []
             sources.append({"source": "bootstrap_fixture_fallback", "identifier": f"{target_name} structures", "retrieved_at": utc_now()})
 
+        gene_name = (((uniprot_payload.get("genes") or [{}])[0].get("geneName") or {}).get("value"))
+        keywords = [target_name, gene_name]
+        literature_query = f"{target_name} {gene_name or ''} protein binder".strip()
+        try:
+            europe_pmc_results, source_meta = fetch_europe_pmc_literature(literature_query)
+            sources.append(source_meta)
+            literature.extend(_filter_literature_hits(europe_pmc_results, keywords))
+        except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
+            warnings.append(f"Europe PMC retrieval failed: {exc}")
+            if identifier == "P04626":
+                literature.extend(HER2_FIXTURE["literature"])
+            sources.append({"source": "bootstrap_fixture_fallback", "identifier": f"{target_name} literature", "retrieved_at": utc_now()})
+
+        try:
+            openalex_results, source_meta = fetch_openalex_literature(literature_query)
+            sources.append(source_meta)
+            existing_ids = {item["identifier"] for item in literature}
+            filtered_openalex = _filter_literature_hits(openalex_results, keywords)
+            literature.extend(item for item in filtered_openalex if item["identifier"] not in existing_ids)
+        except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
+            warnings.append(f"OpenAlex retrieval failed: {exc}")
+            sources.append({"source": "bootstrap_fixture_fallback", "identifier": f"{target_name} openalex", "retrieved_at": utc_now()})
+
     annotations = {
         "gene": (((uniprot_payload.get("genes") or [{}])[0].get("geneName") or {}).get("value")),
         "recommended_name": (
@@ -107,16 +214,21 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
             "Default target region is extracellular domain unless user specifies otherwise.",
             "Glycosylation and epitope accessibility should be checked during branch setup.",
         ],
+        "literature_highlights": [item["title"] for item in literature[:3] if item.get("title")],
     }
 
     dossier = {
         "schema_version": SCHEMA_VERSION,
         "campaign_id": spec["campaign_id"],
         "target": spec["target"],
-        "summary": f"{target_name} ({identifier}) dossier assembled with {len(structures)} structure references.",
+        "summary": (
+            f"{target_name} ({identifier}) dossier assembled with {len(structures)} structure references "
+            f"and {len(literature)} literature references."
+        ),
         "sources": sources,
         "annotations": annotations,
         "structures": structures,
+        "literature": literature,
         "warnings": warnings,
     }
     validate_record("TargetDossier", dossier)

@@ -50,8 +50,16 @@ def write_artifacts(
         "## Dossier",
         dossier["summary"],
         "",
-        "## Clarifications Needed",
+        "## Literature Highlights",
     ]
+
+    for item in dossier["literature"][:3]:
+        report_lines.append(f"- {item['source']}: {item['title']}")
+
+    report_lines.extend([
+        "",
+        "## Clarifications Needed",
+    ])
 
     for field in ("epitope", "modality"):
         if spec["design_space"].get(field) in (None, "open"):

@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from proteinclaw.campaign import build_campaign_spec, required_clarifications
+from proteinclaw.dossier import _filter_literature_hits, build_target_dossier
 from proteinclaw.learning import export_learning_dataset
 from proteinclaw.pipeline import run_campaign
 from proteinclaw.scouting import run_heartbeat
@@ -46,6 +47,38 @@ class CampaignTests(unittest.TestCase):
             candidates = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertGreaterEqual(len(candidates), 3)
             self.assertGreater(candidates[0]["final_score"], candidates[-1]["final_score"])
+            self.assertGreaterEqual(len(result["target_dossier"]["literature"]), 2)
+            self.assertIn("literature references", result["target_dossier"]["summary"])
+
+    def test_stale_dossier_cache_is_rebuilt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            cache_dir = root / ".cache" / "dossiers"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            stale_payload = {
+                "schema_version": "2026-03-08",
+                "campaign_id": "old-campaign",
+                "target": {"name": "HER2", "species": "human", "identifier": "P04626"},
+                "summary": "stale",
+                "sources": [],
+                "annotations": {},
+                "structures": [],
+                "warnings": [],
+            }
+            (cache_dir / "P04626.json").write_text(json.dumps(stale_payload), encoding="utf-8")
+            spec = build_campaign_spec("Design me a protein binder that inhibits HER2")
+            dossier = build_target_dossier(spec, cache_dir, use_fixture=True)
+            self.assertIn("literature", dossier)
+            self.assertGreaterEqual(len(dossier["literature"]), 2)
+
+    def test_literature_filter_prefers_target_relevant_hits(self) -> None:
+        results = [
+            {"title": "HER2-targeted nanobody binder synergizes with trastuzumab"},
+            {"title": "Protein labeling efficiency improves in DNA-PAINT"},
+        ]
+        filtered = _filter_literature_hits(results, ["HER2", "ERBB2"])
+        self.assertEqual(len(filtered), 1)
+        self.assertIn("HER2", filtered[0]["title"])
 
     def test_cli_plan_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
