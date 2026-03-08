@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from proteinclaw.learning import export_learning_dataset
 from proteinclaw.pipeline import run_campaign
+from proteinclaw.scouting import run_heartbeat
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,6 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use bundled fixture data instead of live network retrieval.",
     )
+
+    heartbeat = subparsers.add_parser("heartbeat", help="Write the scouting queue artifact.")
+    heartbeat.add_argument("--root", default=".", help="Workspace root where artifacts should be written.")
+
+    export = subparsers.add_parser("export-learning", help="Export a simple learning dataset from campaign artifacts.")
+    export.add_argument("--root", default=".", help="Workspace root where artifacts should be read and written.")
     return parser
 
 
@@ -42,5 +50,13 @@ def main() -> int:
             use_fixture=args.use_fixture,
         )
         print(result["manifest"]["report_path"])
+        return 0
+    if args.command == "heartbeat":
+        output = run_heartbeat(Path(args.root).resolve())
+        print(output)
+        return 0
+    if args.command == "export-learning":
+        output = export_learning_dataset(Path(args.root).resolve())
+        print(output)
         return 0
     return 1

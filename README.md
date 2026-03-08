@@ -36,8 +36,20 @@ python3 -m proteinclaw plan \
   --root .
 ```
 
+Write the heartbeat scouting queue:
+
+```bash
+python3 -m proteinclaw heartbeat --root .
+```
+
+Export the bootstrap learning dataset from stored campaign artifacts:
+
+```bash
+python3 -m proteinclaw export-learning --root .
+```
+
 ## Test
 
 ```bash
-python3 -m unittest discover -s tests -v
+./scripts/run_checks.sh
 ```

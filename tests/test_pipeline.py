@@ -8,7 +8,9 @@ import unittest
 from pathlib import Path
 
 from proteinclaw.campaign import build_campaign_spec, required_clarifications
+from proteinclaw.learning import export_learning_dataset
 from proteinclaw.pipeline import run_campaign
+from proteinclaw.scouting import run_heartbeat
 from proteinclaw.tooling import select_route
 
 
@@ -67,6 +69,26 @@ class CampaignTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("report.md", completed.stdout)
+
+    def test_heartbeat_writes_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = run_heartbeat(Path(tmpdir))
+            self.assertTrue(output.exists())
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertGreaterEqual(len(payload["items"]), 5)
+
+    def test_learning_export_writes_dataset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_campaign(
+                prompt="Design me a protein binder that inhibits HER2",
+                root=root,
+                execution_mode="academic",
+                use_fixture=True,
+            )
+            output = export_learning_dataset(root)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertGreaterEqual(payload["row_count"], 3)
 
 
 if __name__ == "__main__":
