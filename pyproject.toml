@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proteinclaw"
+version = "0.1.0"
+description = "A minimal, auditable MVP for the Clawd protein design copilot."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "DaanishHindustaniTR" }
+]
+
+[tool.setuptools.packages.find]
+include = ["proteinclaw*"]
