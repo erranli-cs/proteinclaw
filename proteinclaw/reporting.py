@@ -20,6 +20,7 @@ def write_artifacts(
     provenance_path = campaign_root / "provenance" / "manifest.json"
     candidates_path = campaign_root / "candidates" / "ranked-candidates.json"
     report_path = campaign_root / "report.md"
+    run_log_path = campaign_root / "run_log.md"
 
     dump_json(campaign_root / "campaign-spec.json", spec)
     dump_json(campaign_root / "target-dossier.json", dossier)
@@ -107,6 +108,7 @@ def write_artifacts(
             "candidates": str(candidates_path),
             "trace": str(trace_path),
             "provenance": str(provenance_path),
+            "run_log": str(run_log_path),
         },
         "top_candidates": [candidate["candidate_id"] for candidate in top],
         "generated_at": utc_now(),

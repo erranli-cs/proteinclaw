@@ -14,6 +14,25 @@ This branch can submit the requested remote jobs through Tamarind when `TAMARIND
 - supports interactive clarification capture
 - uses a versioned tool registry and honest adapter fallback behavior
 
+## PicoClaw
+
+This repo is now PicoClaw-ready.
+
+PicoClaw should use the workspace files:
+
+- [AGENTS.md](/Users/daanishhindustano/Documents/projects/proteinclaw/AGENTS.md)
+- [TOOLS.md](/Users/daanishhindustano/Documents/projects/proteinclaw/TOOLS.md)
+- [HEARTBEAT.md](/Users/daanishhindustano/Documents/projects/proteinclaw/HEARTBEAT.md)
+- [USER.md](/Users/daanishhindustano/Documents/projects/proteinclaw/USER.md)
+
+and call the wrapper:
+
+```bash
+./scripts/run_picoclaw_campaign.sh --prompt "Design me a protein binder that inhibits HER2"
+```
+
+See [picoclaw.md](/Users/daanishhindustano/Documents/projects/proteinclaw/docs/runbooks/picoclaw.md) for the intended interaction model.
+
 ## Run
 
 Verify the workspace contract:

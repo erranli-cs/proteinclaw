@@ -45,7 +45,12 @@ def _request(root: Path, method: str, path: str, body: bytes | None = None, cont
 
 def request_json(root: Path, method: str, path: str, payload: dict | None = None) -> dict:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
-    response = _request(root, method, path, body=body, content_type="application/json")
+    try:
+        response = _request(root, method, path, body=body, content_type="application/json")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace").strip()
+        message = detail or exc.reason or "HTTP request failed"
+        raise TamarindError(f"HTTP {exc.code}: {message}") from exc
     if not response or not response.strip():
         return {}
     return json.loads(response)
@@ -53,7 +58,12 @@ def request_json(root: Path, method: str, path: str, payload: dict | None = None
 
 def request_text(root: Path, method: str, path: str, payload: dict | None = None) -> str:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
-    return _request(root, method, path, body=body, content_type="application/json")
+    try:
+        return _request(root, method, path, body=body, content_type="application/json")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace").strip()
+        message = detail or exc.reason or "HTTP request failed"
+        raise TamarindError(f"HTTP {exc.code}: {message}") from exc
 
 
 def upload_file(root: Path, local_path: Path, folder: str) -> dict:
@@ -108,11 +118,15 @@ def get_job(root: Path, job_name: str) -> dict:
     return payload
 
 
-def wait_for_job(root: Path, job_name: str, timeout_seconds: int = 1800, poll_interval: int = 10) -> dict:
+def wait_for_job(root: Path, job_name: str, timeout_seconds: int = 1800, poll_interval: int = 10, status_callback=None) -> dict:
     deadline = time.time() + timeout_seconds
+    last_status = None
     while time.time() < deadline:
         payload = get_job(root, job_name)
         status = payload.get("JobStatus")
+        if status != last_status and status_callback is not None:
+            status_callback(status or "unknown")
+            last_status = status
         if status == "Complete":
             return payload
         if status in {"Stopped", "Deleted"}:

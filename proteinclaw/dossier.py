@@ -66,12 +66,37 @@ EGFR_FIXTURE = {
         }
     ]
 }
+
+NTRK1_FIXTURE = {
+    "uniprot": {
+        "primaryAccession": "P04629",
+        "proteinDescription": {"recommendedName": {"fullName": {"value": "High affinity nerve growth factor receptor"}}},
+        "genes": [{"geneName": {"value": "NTRK1"}}],
+        "organism": {"scientificName": "Homo sapiens"},
+        "sequence": {"value": "MRLPAAALALLLLAASLQGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+    },
+    "structures": [
+        {"pdb_id": "2IFG", "description": "TrkA extracellular domain in complex with NGF"},
+        {"pdb_id": "1WWW", "description": "TrkA extracellular domain structure"},
+    ],
+    "literature": [
+        {
+            "source": "bootstrap_fixture",
+            "title": "Structural basis of neurotrophin-TrkA interface recognition identifies the ligand-binding surface.",
+            "identifier": "fixture-ntrk1-1",
+            "year": 2026,
+            "url": None,
+            "reason": "Bootstrap literature placeholder for offline tests.",
+        }
+    ],
+}
 BINDER_TERMS = ("binder", "binding", "antibody", "nanobody", "miniprotein", "protein")
 
 
 FIXTURES = {
     "P04626": HER2_FIXTURE,
     "P00533": EGFR_FIXTURE,
+    "P04629": NTRK1_FIXTURE,
 }
 
 

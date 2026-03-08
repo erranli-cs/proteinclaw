@@ -23,3 +23,11 @@ def load_env(root: Path) -> dict[str, str]:
 
 def get_env_value(root: Path, key: str) -> str | None:
     return os.environ.get(key) or load_env(root).get(key)
+
+
+def get_env_value_any(root: Path, *keys: str) -> str | None:
+    for key in keys:
+        value = get_env_value(root, key)
+        if value:
+            return value
+    return None

@@ -79,7 +79,41 @@ def _invocation_record(campaign_id: str, tool: str, stage: str, mode: str, statu
     return record
 
 
-def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs: dict, workdir: Path) -> dict:
+def _is_quota_exceeded_error(message: str) -> bool:
+    normalized = message.lower()
+    return "monthly job limit exceeded" in normalized or "job limit exceeded" in normalized
+
+
+def _write_mock_tool_outputs(tool: str, output_dir: Path, reason: str) -> list[str]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    mock_files: list[Path] = []
+    summary_path = output_dir / "mock-response.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "tool": tool,
+                "mock": True,
+                "reason": reason,
+                "generated_at": utc_now(),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    mock_files.append(summary_path)
+    if tool == "ligandmpnn":
+        fasta_path = output_dir / "mock_sequences.fa"
+        fasta_path.write_text(
+            ">mock_quota_placeholder\nACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWY\n",
+            encoding="utf-8",
+        )
+        mock_files.append(fasta_path)
+    return [str(path) for path in mock_files]
+
+
+def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs: dict, workdir: Path, logger=None) -> dict:
     spec = TOOL_REGISTRY[tool]
     output_dir = Path(inputs["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -90,16 +124,26 @@ def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs
         upload_path = inputs.get("upload_path")
         if upload_path:
             folder = f"proteinclaw/{campaign_id}/{inputs.get('hypothesis_id', tool)}"
+            if logger:
+                logger(f"{tool}: uploading `{upload_path}` to Tamarind folder `{folder}`.")
             uploaded = upload_file(workdir, Path(upload_path), folder)
             file_key = inputs.get("file_setting_key")
             if file_key:
                 settings[file_key] = uploaded["storagePath"]
+            if logger:
+                logger(f"{tool}: upload succeeded as `{uploaded['storagePath']}`.")
+        if logger:
+            logger(f"{tool}: submitting Tamarind job `{job_name}` with settings `{json.dumps(settings, sort_keys=True)}`.")
         submit_job(workdir, job_name, spec.remote_type or tool, settings)
-        wait_for_job(workdir, job_name)
+        wait_for_job(workdir, job_name, status_callback=(lambda status: logger(f"{tool}: Tamarind status for `{job_name}` -> {status}.") if logger else None))
         result_url = get_result_url(workdir, job_name)
         archive_path = output_dir / f"{job_name}.zip"
+        if logger:
+            logger(f"{tool}: downloading result archive from `{result_url}`.")
         download_result_archive(result_url, archive_path)
         extracted = extract_result_archive(archive_path, output_dir)
+        if logger:
+            logger(f"{tool}: extracted {len(extracted)} files into `{output_dir}`.")
         outputs = {
             "job_name": job_name,
             "result_url": result_url,
@@ -109,8 +153,31 @@ def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs
         }
         return _invocation_record(campaign_id, tool, stage, mode, "pass", inputs, outputs, [])
     except TamarindError as exc:
+        if _is_quota_exceeded_error(str(exc)):
+            if logger:
+                logger(f"{tool}: quota exceeded, writing explicit mock outputs.")
+            mock_files = _write_mock_tool_outputs(tool, output_dir, str(exc))
+            return _invocation_record(
+                campaign_id,
+                tool,
+                stage,
+                mode,
+                "mock",
+                inputs,
+                {
+                    "output_dir": str(output_dir),
+                    "reason": str(exc),
+                    "mocked": True,
+                    "downloaded_files": mock_files,
+                },
+                ["tamarind_quota_exceeded_mocked"],
+            )
+        if logger:
+            logger(f"{tool}: Tamarind error `{exc}`.")
         return _invocation_record(campaign_id, tool, stage, mode, "failed", inputs, {"output_dir": str(output_dir), "reason": str(exc)}, ["tamarind_error"])
     except urllib.error.URLError as exc:
+        if logger:
+            logger(f"{tool}: transport error `{exc}`.")
         return _invocation_record(
             campaign_id,
             tool,
@@ -122,10 +189,12 @@ def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs
             ["tamarind_transport_error"],
         )
     except Exception as exc:
+        if logger:
+            logger(f"{tool}: unexpected error `{exc}`.")
         return _invocation_record(campaign_id, tool, stage, mode, "failed", inputs, {"output_dir": str(output_dir), "reason": str(exc)}, ["unexpected_error"])
 
 
-def run_tool_adapter(campaign_id: str, tool: str, stage: str, mode: str, inputs: dict, workdir: Path) -> dict:
+def run_tool_adapter(campaign_id: str, tool: str, stage: str, mode: str, inputs: dict, workdir: Path, logger=None) -> dict:
     spec = TOOL_REGISTRY[tool]
     if spec.provider == "tamarind":
         if not has_tamarind_key(workdir):
@@ -139,7 +208,7 @@ def run_tool_adapter(campaign_id: str, tool: str, stage: str, mode: str, inputs:
                 {"reason": "missing_tamarind_api_key", "output_dir": inputs.get("output_dir")},
                 ["missing_tamarind_api_key"],
             )
-        return _run_tamarind_job(campaign_id, tool, stage, mode, inputs, workdir)
+        return _run_tamarind_job(campaign_id, tool, stage, mode, inputs, workdir, logger=logger)
 
     env_key = f"PROTEINCLAW_{tool.upper().replace('-', '_')}_CMD"
     command = os.environ.get(env_key) or spec.default_command

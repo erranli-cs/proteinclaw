@@ -6,12 +6,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+from urllib.error import HTTPError
 
 from proteinclaw.campaign import build_campaign_spec, required_clarifications, resolve_clarifications
 from proteinclaw.dossier import _filter_literature_hits, build_target_dossier, write_fixture_pdb
 from proteinclaw.learning import export_learning_dataset
 from proteinclaw.pipeline import run_campaign
 from proteinclaw.scouting import run_heartbeat
+from proteinclaw.tamarind import TamarindError, request_text
 from proteinclaw.tooling import TOOL_REGISTRY, load_tool_registry, run_tool_adapter, select_route
 
 
@@ -25,6 +28,11 @@ class CampaignTests(unittest.TestCase):
     def test_second_supported_target_defaults(self) -> None:
         spec = build_campaign_spec("Design me a protein binder that inhibits EGFR")
         self.assertEqual(spec["target"]["identifier"], "P00533")
+
+    def test_trka_target_defaults(self) -> None:
+        spec = build_campaign_spec("Please design a protein minibinder to tropomyosin receptor kinase A (TrkA; also known as NTRK1)")
+        self.assertEqual(spec["target"]["identifier"], "P04629")
+        self.assertEqual(spec["design_space"]["modality"], "mini-binder")
 
     def test_clarifications_are_high_value_only(self) -> None:
         spec = build_campaign_spec("Design me a protein binder that inhibits HER2")
@@ -58,6 +66,11 @@ class CampaignTests(unittest.TestCase):
             self.assertGreaterEqual(len(result["target_dossier"]["literature"]), 2)
             self.assertIn("literature references", result["target_dossier"]["summary"])
             self.assertTrue(any(event["type"] == "tool_invoked" for event in result["trace_events"]))
+            run_log_path = Path(result["manifest"]["artifact_paths"]["run_log"])
+            self.assertTrue(run_log_path.exists())
+            self.assertIn("## Planning", run_log_path.read_text(encoding="utf-8"))
+            rfd3_invocation = next(item for item in result["tool_invocations"] if item["tool"] == "rfd3")
+            self.assertEqual(rfd3_invocation["inputs"]["settings"]["numDesigns"], 10)
 
     def test_stale_dossier_cache_is_rebuilt(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -106,6 +119,67 @@ class CampaignTests(unittest.TestCase):
             )
             self.assertEqual(invocation["status"], "mock")
             self.assertIn("missing_tamarind_api_key", invocation["failure_codes"])
+
+    def test_tamarind_request_text_preserves_http_error_body(self) -> None:
+        http_error = HTTPError(
+            url="https://app.tamarind.bio/api/submit-job",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=None,
+        )
+        http_error.read = lambda: b"Monthly job limit exceeded."
+        with mock.patch("proteinclaw.tamarind._request", side_effect=http_error):
+            with self.assertRaises(TamarindError) as exc:
+                request_text(Path("."), "POST", "/submit-job", {"jobName": "debug"})
+        self.assertEqual(str(exc.exception), "HTTP 400: Monthly job limit exceeded.")
+
+    def test_run_tool_adapter_surfaces_tamarind_submission_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_summary_path = Path(tmpdir) / "out" / "mock-response.json"
+            with (
+                mock.patch("proteinclaw.tooling.has_tamarind_key", return_value=True),
+                mock.patch("proteinclaw.tooling.submit_job", side_effect=TamarindError("HTTP 400: Monthly job limit exceeded.")),
+            ):
+                invocation = run_tool_adapter(
+                    "campaign-x",
+                    "rfd3",
+                    "generation",
+                    "academic",
+                    {
+                        "hypothesis_id": "h1",
+                        "output_dir": str(Path(tmpdir) / "out"),
+                        "settings": {"task": "Binder Design"},
+                    },
+                    Path(tmpdir),
+                )
+            self.assertEqual(invocation["status"], "mock")
+            self.assertEqual(invocation["failure_codes"], ["tamarind_quota_exceeded_mocked"])
+            self.assertEqual(invocation["outputs"]["reason"], "HTTP 400: Monthly job limit exceeded.")
+            self.assertTrue(invocation["outputs"]["mocked"])
+            self.assertTrue(mock_summary_path.exists())
+
+    def test_quota_mock_writes_placeholder_ligandmpnn_sequence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_fasta_path = Path(tmpdir) / "out" / "mock_sequences.fa"
+            with (
+                mock.patch("proteinclaw.tooling.has_tamarind_key", return_value=True),
+                mock.patch("proteinclaw.tooling.submit_job", side_effect=TamarindError("HTTP 400: Monthly job limit exceeded.")),
+            ):
+                invocation = run_tool_adapter(
+                    "campaign-x",
+                    "ligandmpnn",
+                    "sequence_design",
+                    "academic",
+                    {
+                        "hypothesis_id": "h1",
+                        "output_dir": str(Path(tmpdir) / "out"),
+                        "settings": {"numSequences": 2},
+                    },
+                    Path(tmpdir),
+                )
+            self.assertEqual(invocation["status"], "mock")
+            self.assertTrue(mock_fasta_path.exists())
 
     def test_fixture_pdb_writer_creates_local_input(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
