@@ -11,6 +11,7 @@ from urllib.error import HTTPError
 
 from proteinclaw.campaign import build_campaign_spec, required_clarifications, resolve_clarifications
 from proteinclaw.dossier import _filter_literature_hits, build_target_dossier, write_fixture_pdb
+from proteinclaw.env import load_env
 from proteinclaw.learning import export_learning_dataset
 from proteinclaw.pipeline import run_campaign
 from proteinclaw.scouting import run_heartbeat
@@ -48,7 +49,7 @@ class CampaignTests(unittest.TestCase):
 
     def test_commercial_safe_route_excludes_restricted_tools(self) -> None:
         route = select_route("commercial_safe", {"name": "domain-ii-blockade"})
-        self.assertEqual(route, ["rfd3", "ligandmpnn", "alphafold3"])
+        self.assertEqual(route, ["rfd3", "ligandmpnn"])
 
     def test_end_to_end_campaign_writes_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -107,6 +108,12 @@ class CampaignTests(unittest.TestCase):
         self.assertIn("rfd3", registry)
         self.assertEqual(registry["rfd3"].remote_type, "rfdiffusion")
 
+    def test_env_loader_ignores_env_example(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / ".env.example").write_text("TAMARIND=placeholder\n", encoding="utf-8")
+            self.assertEqual(load_env(root), {})
+
     def test_run_tool_adapter_marks_unconfigured_tools_as_mock(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             invocation = run_tool_adapter(
@@ -119,6 +126,20 @@ class CampaignTests(unittest.TestCase):
             )
             self.assertEqual(invocation["status"], "mock")
             self.assertIn("missing_tamarind_api_key", invocation["failure_codes"])
+
+    def test_run_tool_adapter_blocks_restricted_tool_in_commercial_safe_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            invocation = run_tool_adapter(
+                "campaign-x",
+                "alphafold3",
+                "validation",
+                "commercial_safe",
+                {"hypothesis_id": "h1", "output_dir": str(Path(tmpdir) / "out"), "settings": {"sequence": "ACDE"}},
+                Path(tmpdir),
+            )
+            self.assertEqual(invocation["status"], "skipped")
+            self.assertEqual(invocation["failure_codes"], ["license_blocked"])
+            self.assertEqual(invocation["outputs"]["reason"], "license_blocked")
 
     def test_tamarind_request_text_preserves_http_error_body(self) -> None:
         http_error = HTTPError(

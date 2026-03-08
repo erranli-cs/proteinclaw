@@ -25,11 +25,9 @@ PicoClaw should use the workspace files:
 - [HEARTBEAT.md](/Users/daanishhindustano/Documents/projects/proteinclaw/HEARTBEAT.md)
 - [USER.md](/Users/daanishhindustano/Documents/projects/proteinclaw/USER.md)
 
-and call the wrapper:
+PicoClaw should orchestrate the workflow itself by reading those files, deciding which allowed tools to run, and writing campaign artifacts into the workspace.
 
-```bash
-./scripts/run_picoclaw_campaign.sh --prompt "Design me a protein binder that inhibits HER2"
-```
+Repo scripts and CLIs are helper entrypoints, not the required PicoClaw control plane.
 
 See [picoclaw.md](/Users/daanishhindustano/Documents/projects/proteinclaw/docs/runbooks/picoclaw.md) for the intended interaction model.
 

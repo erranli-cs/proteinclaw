@@ -57,7 +57,14 @@ TOOL_REGISTRY = load_tool_registry()
 
 
 def select_route(execution_mode: str, hypothesis: dict) -> list[str]:
-    return ["rfd3", "ligandmpnn", "alphafold3"]
+    preferred_route = ["rfd3", "ligandmpnn", "alphafold3"]
+    route: list[str] = []
+    for tool in preferred_route:
+        spec = TOOL_REGISTRY[tool]
+        if execution_mode == "commercial_safe" and not spec.commercial_safe:
+            continue
+        route.append(tool)
+    return route
 
 
 def _invocation_record(campaign_id: str, tool: str, stage: str, mode: str, status: str, inputs: dict, outputs: dict, failure_codes: list[str]) -> dict:
@@ -196,6 +203,17 @@ def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs
 
 def run_tool_adapter(campaign_id: str, tool: str, stage: str, mode: str, inputs: dict, workdir: Path, logger=None) -> dict:
     spec = TOOL_REGISTRY[tool]
+    if mode == "commercial_safe" and not spec.commercial_safe:
+        return _invocation_record(
+            campaign_id,
+            tool,
+            stage,
+            mode,
+            "skipped",
+            inputs,
+            {"reason": "license_blocked", "output_dir": inputs.get("output_dir")},
+            ["license_blocked"],
+        )
     if spec.provider == "tamarind":
         if not has_tamarind_key(workdir):
             return _invocation_record(
@@ -212,17 +230,6 @@ def run_tool_adapter(campaign_id: str, tool: str, stage: str, mode: str, inputs:
 
     env_key = f"PROTEINCLAW_{tool.upper().replace('-', '_')}_CMD"
     command = os.environ.get(env_key) or spec.default_command
-    if mode == "commercial_safe" and not spec.commercial_safe:
-        return _invocation_record(
-            campaign_id,
-            tool,
-            stage,
-            mode,
-            "skipped",
-            inputs,
-            {"reason": "license_blocked"},
-            ["license_blocked"],
-        )
     if not command:
         return _invocation_record(
             campaign_id,
