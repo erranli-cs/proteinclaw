@@ -30,6 +30,21 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use bundled fixture data instead of live network retrieval.",
     )
+    plan.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Ask the high-value clarification questions interactively.",
+    )
+    plan.add_argument(
+        "--epitope",
+        default=None,
+        help="Optional clarification override for epitope selection.",
+    )
+    plan.add_argument(
+        "--modality",
+        default=None,
+        help="Optional clarification override for modality selection.",
+    )
 
     heartbeat = subparsers.add_parser("heartbeat", help="Write the scouting queue artifact.")
     heartbeat.add_argument("--root", default=".", help="Workspace root where artifacts should be written.")
@@ -48,6 +63,8 @@ def main() -> int:
             root=Path(args.root).resolve(),
             execution_mode=args.execution_mode,
             use_fixture=args.use_fixture,
+            interactive=args.interactive,
+            clarifications={key: value for key, value in {"epitope": args.epitope, "modality": args.modality}.items() if value is not None},
         )
         print(result["manifest"]["report_path"])
         return 0

@@ -28,6 +28,8 @@ def export_learning_dataset(root: Path, output_path: Path | None = None) -> Path
                         "rank": rank,
                         "final_score": candidate["final_score"],
                         "parent_hypothesis": candidate["parent_hypothesis"],
+                        "score_components": candidate["scores"],
+                        "generator_route": candidate["generator_route"],
                         "mock_generation": candidate["provenance"].get("mock_generation", False),
                     }
                 )

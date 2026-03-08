@@ -7,12 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from proteinclaw.campaign import build_campaign_spec, required_clarifications
+from proteinclaw.campaign import build_campaign_spec, required_clarifications, resolve_clarifications
 from proteinclaw.dossier import _filter_literature_hits, build_target_dossier
 from proteinclaw.learning import export_learning_dataset
 from proteinclaw.pipeline import run_campaign
 from proteinclaw.scouting import run_heartbeat
-from proteinclaw.tooling import select_route
+from proteinclaw.tooling import TOOL_REGISTRY, load_tool_registry, run_tool_adapter, select_route
 
 
 class CampaignTests(unittest.TestCase):
@@ -22,10 +22,21 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(spec["task_type"], "protein_binder_design")
         self.assertTrue(spec["constraints"]["glycan_avoidance"])
 
+    def test_second_supported_target_defaults(self) -> None:
+        spec = build_campaign_spec("Design me a protein binder that inhibits EGFR")
+        self.assertEqual(spec["target"]["identifier"], "P00533")
+
     def test_clarifications_are_high_value_only(self) -> None:
         spec = build_campaign_spec("Design me a protein binder that inhibits HER2")
         questions = required_clarifications(spec)
         self.assertEqual([item.key for item in questions], ["epitope", "modality"])
+
+    def test_resolve_clarifications_applies_defaults(self) -> None:
+        spec = build_campaign_spec("Design me a protein binder that inhibits HER2")
+        answers, records = resolve_clarifications(spec, interactive=False, answers={"epitope": "known therapeutic epitope"})
+        self.assertEqual(answers["epitope"], "known therapeutic epitope")
+        self.assertEqual(answers["modality"], "open modality")
+        self.assertEqual(len(records), 2)
 
     def test_commercial_safe_route_excludes_restricted_tools(self) -> None:
         route = select_route(
@@ -49,6 +60,7 @@ class CampaignTests(unittest.TestCase):
             self.assertGreater(candidates[0]["final_score"], candidates[-1]["final_score"])
             self.assertGreaterEqual(len(result["target_dossier"]["literature"]), 2)
             self.assertIn("literature references", result["target_dossier"]["summary"])
+            self.assertTrue(any(event["type"] == "tool_invoked" for event in result["trace_events"]))
 
     def test_stale_dossier_cache_is_rebuilt(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -80,6 +92,17 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(len(filtered), 1)
         self.assertIn("HER2", filtered[0]["title"])
 
+    def test_tool_registry_loads_from_config(self) -> None:
+        registry = load_tool_registry()
+        self.assertIn("bindcraft", registry)
+        self.assertEqual(registry["bindcraft"].name, "bindcraft")
+
+    def test_run_tool_adapter_marks_unconfigured_tools_as_mock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            invocation = run_tool_adapter("campaign-x", "bindcraft", "generation", "academic", {"hypothesis_id": "h1"}, Path(tmpdir))
+            self.assertEqual(invocation["status"], "mock")
+            self.assertIn("adapter_not_configured", invocation["failure_codes"])
+
     def test_cli_plan_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             completed = subprocess.run(
@@ -103,12 +126,38 @@ class CampaignTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("report.md", completed.stdout)
 
+    def test_cli_plan_with_clarification_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "proteinclaw",
+                    "plan",
+                    "--prompt",
+                    "Design me a protein binder that inhibits EGFR",
+                    "--epitope",
+                    "known therapeutic epitope",
+                    "--modality",
+                    "mini-binder",
+                    "--use-fixture",
+                    "--root",
+                    tmpdir,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("report.md", completed.stdout)
+
     def test_heartbeat_writes_queue(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output = run_heartbeat(Path(tmpdir))
             self.assertTrue(output.exists())
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertGreaterEqual(len(payload["items"]), 5)
+            self.assertTrue(all("retrieved_at" in item for item in payload["items"]))
 
     def test_learning_export_writes_dataset(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -122,6 +171,7 @@ class CampaignTests(unittest.TestCase):
             output = export_learning_dataset(root)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertGreaterEqual(payload["row_count"], 3)
+            self.assertIn("score_components", payload["rows"][0])
 
 
 if __name__ == "__main__":

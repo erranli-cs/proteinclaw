@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": ["schema_version", "invocation_id", "campaign_id", "tool", "stage", "status", "started_at", "completed_at", "mode", "inputs", "outputs", "failure_codes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "2026-03-08"},
+    "invocation_id": {"type": "string"},
+    "campaign_id": {"type": "string"},
+    "tool": {"type": "string"},
+    "stage": {"type": "string"},
+    "status": {"type": "string", "enum": ["pass", "skipped", "failed", "mock"]},
+    "started_at": {"type": "string"},
+    "completed_at": {"type": "string"},
+    "mode": {"type": "string", "enum": ["academic", "commercial_safe"]},
+    "inputs": {"type": "object"},
+    "outputs": {"type": "object"},
+    "failure_codes": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -11,6 +11,8 @@ This branch does not run real scientific design tools yet. It does run a traceab
 - creates mock candidate records
 - ranks candidates
 - writes a reproducible artifact package
+- supports interactive clarification capture
+- uses a versioned tool registry and honest adapter fallback behavior
 
 ## Run
 
@@ -32,6 +34,18 @@ Or run the CLI directly:
 python3 -m proteinclaw plan \
   --prompt "Design me a protein binder that inhibits HER2" \
   --execution-mode commercial_safe \
+  --epitope "dimerization-relevant surface" \
+  --modality "mini-binder" \
+  --use-fixture \
+  --root .
+```
+
+Interactive clarification mode:
+
+```bash
+python3 -m proteinclaw plan \
+  --prompt "Design me a protein binder that inhibits EGFR" \
+  --interactive \
   --use-fixture \
   --root .
 ```

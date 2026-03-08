@@ -64,6 +64,8 @@ def write_artifacts(
     for field in ("epitope", "modality"):
         if spec["design_space"].get(field) in (None, "open"):
             report_lines.append(f"- {field}: unresolved")
+        else:
+            report_lines.append(f"- {field}: {spec['design_space'][field]}")
     report_lines.extend(["", "## Top Candidates"])
     for candidate in top:
         report_lines.extend(
@@ -73,6 +75,7 @@ def write_artifacts(
                 f"- Hypothesis: {candidate['parent_hypothesis']}",
                 f"- Why selected: {', '.join(candidate['rationale']['why_selected'])}",
                 f"- Risks: {', '.join(candidate['rationale']['main_risks'])}",
+                f"- Validation statuses: {candidate['validation']}",
             ]
         )
 

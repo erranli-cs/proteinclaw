@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": ["schema_version", "hypothesis_id", "campaign_id", "name", "objective", "region_of_interest", "exclusion_zones", "scaffold_bias", "validation_metrics", "stop_criteria", "assumptions", "evidence_refs"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "2026-03-08"},
+    "hypothesis_id": {"type": "string"},
+    "campaign_id": {"type": "string"},
+    "name": {"type": "string"},
+    "objective": {"type": "string"},
+    "region_of_interest": {"type": "string"},
+    "exclusion_zones": {"type": "array", "items": {"type": "string"}},
+    "scaffold_bias": {"type": "string"},
+    "validation_metrics": {"type": "array", "items": {"type": "string"}},
+    "stop_criteria": {"type": "array", "items": {"type": "string"}},
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}}
+  }
+}

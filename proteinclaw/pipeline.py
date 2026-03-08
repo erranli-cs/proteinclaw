@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from proteinclaw.campaign import apply_clarifications, build_campaign_spec, required_clarifications
+from proteinclaw.campaign import apply_clarifications, build_campaign_spec, resolve_clarifications
 from proteinclaw.candidates import build_candidates
 from proteinclaw.dossier import build_target_dossier
 from proteinclaw.hypotheses import generate_hypotheses
 from proteinclaw.ranking import rank_candidates
 from proteinclaw.reporting import write_artifacts
 from proteinclaw.schemas import SCHEMA_VERSION, validate_record
-from proteinclaw.tooling import mock_tool_invocation, select_route
+from proteinclaw.tooling import run_tool_adapter, select_route
 from proteinclaw.utils import utc_now
 
 
@@ -33,27 +33,44 @@ def run_campaign(
     execution_mode: str = "academic",
     use_fixture: bool = False,
     clarifications: dict[str, str] | None = None,
+    interactive: bool = False,
 ) -> dict:
     spec = build_campaign_spec(prompt, execution_mode=execution_mode)
     trace_events = [
         trace_event(spec["campaign_id"], "campaign_started", spec["campaign_id"], "Campaign initialized from user prompt.", {"prompt": prompt})
     ]
 
-    outstanding = required_clarifications(spec)
+    resolved_answers, clarification_records = resolve_clarifications(spec, interactive=interactive, answers=clarifications)
+    outstanding = [item["key"] for item in clarification_records if item["default_applied"]]
     trace_events.append(
         trace_event(
             spec["campaign_id"],
             "clarifications_requested",
             spec["campaign_id"],
-            f"{len(outstanding)} high-value clarifications remain.",
-            {"questions": [item.question for item in outstanding]},
+            f"{len(clarification_records)} high-value clarifications were resolved.",
+            {"clarifications": clarification_records, "defaults_applied": outstanding},
         )
     )
-    spec = apply_clarifications(spec, clarifications)
+    spec = apply_clarifications(spec, resolved_answers)
+    trace_events.append(
+        trace_event(
+            spec["campaign_id"],
+            "clarifications_applied",
+            spec["campaign_id"],
+            "Clarification answers applied to campaign spec.",
+            {"answers": resolved_answers},
+        )
+    )
 
     dossier = build_target_dossier(spec, root / ".cache" / "dossiers", use_fixture=use_fixture)
     trace_events.append(
-        trace_event(spec["campaign_id"], "dossier_built", spec["campaign_id"], "Target dossier assembled.", {"warnings": dossier["warnings"]})
+        trace_event(
+            spec["campaign_id"],
+            "dossier_built",
+            spec["campaign_id"],
+            "Target dossier assembled.",
+            {"warnings": dossier["warnings"], "source_count": len(dossier["sources"]), "literature_count": len(dossier["literature"])},
+        )
     )
 
     hypotheses = generate_hypotheses(spec, dossier)
@@ -72,19 +89,27 @@ def run_campaign(
                 "route_selected",
                 hypothesis["hypothesis_id"],
                 f"Selected route {' -> '.join(route)}.",
-                {"route": route},
+                {"route": route, "justification": "Preferred generation and validation tools selected from the registry."},
             )
         )
         for tool in route:
             stage = "validation" if tool in ("alphafold3", "rf3", "chai1", "boltz", "openfold3-preview") else ("sequence_design" if "mpnn" in tool else "generation")
-            invocations.append(
-                mock_tool_invocation(
+            invocation = run_tool_adapter(
+                spec["campaign_id"],
+                tool,
+                stage,
+                spec["execution_mode"],
+                {"hypothesis_id": hypothesis["hypothesis_id"]},
+                root,
+            )
+            invocations.append(invocation)
+            trace_events.append(
+                trace_event(
                     spec["campaign_id"],
-                    tool,
-                    stage,
-                    spec["execution_mode"],
-                    {"hypothesis_id": hypothesis["hypothesis_id"]},
-                    {"status": "mock"},
+                    "tool_invoked",
+                    invocation["invocation_id"],
+                    f"{tool} completed with status {invocation['status']}.",
+                    {"tool": tool, "stage": stage, "status": invocation["status"], "failure_codes": invocation["failure_codes"]},
                 )
             )
 
@@ -96,7 +121,7 @@ def run_campaign(
             "candidates_ranked",
             spec["campaign_id"],
             f"Ranked {len(ranked)} candidates.",
-            {"top_candidate": ranked[0]["candidate_id"] if ranked else None},
+            {"top_candidate": ranked[0]["candidate_id"] if ranked else None, "weights": "default"},
         )
     )
 
