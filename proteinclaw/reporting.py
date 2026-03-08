@@ -33,7 +33,7 @@ def write_artifacts(
             "campaign_id": spec["campaign_id"],
             "generated_at": utc_now(),
             "sources": dossier["sources"],
-            "mock_generation": True,
+            "mock_generation": any(candidate["provenance"]["mock_generation"] for candidate in candidates),
         },
     )
 
@@ -83,12 +83,12 @@ def write_artifacts(
         [
             "",
             "## Notes",
-            "- This MVP uses mock candidate generation and routing artifacts.",
-            "- The outputs are traceable and testable but not scientifically validated designs.",
+            "- Tool outputs are downloaded into the local campaign directory whenever remote execution succeeds.",
+            "- Any tool without a configured or successful backend is marked explicitly as mock or failed in the trace.",
             "",
             "## Next Experiments",
-            "- Resolve epitope and modality before heavy generation.",
-            "- Replace mock adapters with real tool wrappers in the next iteration.",
+            "- Inspect the downloaded tool outputs before trusting rankings.",
+            "- Tighten binder-chain selection and AF3 score extraction once Tamarind result formats are observed.",
         ]
     )
 

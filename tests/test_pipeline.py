@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from proteinclaw.campaign import build_campaign_spec, required_clarifications, resolve_clarifications
-from proteinclaw.dossier import _filter_literature_hits, build_target_dossier
+from proteinclaw.dossier import _filter_literature_hits, build_target_dossier, write_fixture_pdb
 from proteinclaw.learning import export_learning_dataset
 from proteinclaw.pipeline import run_campaign
 from proteinclaw.scouting import run_heartbeat
@@ -39,18 +39,15 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(len(records), 2)
 
     def test_commercial_safe_route_excludes_restricted_tools(self) -> None:
-        route = select_route(
-            "commercial_safe",
-            {"name": "domain-ii-blockade"},
-        )
-        self.assertNotIn("alphafold3", route)
+        route = select_route("commercial_safe", {"name": "domain-ii-blockade"})
+        self.assertEqual(route, ["rfd3", "ligandmpnn", "alphafold3"])
 
     def test_end_to_end_campaign_writes_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             result = run_campaign(
                 prompt="Design me a protein binder that inhibits HER2",
                 root=Path(tmpdir),
-                execution_mode="commercial_safe",
+                execution_mode="academic",
                 use_fixture=True,
             )
             manifest_path = Path(result["manifest"]["artifact_paths"]["candidates"])
@@ -94,14 +91,27 @@ class CampaignTests(unittest.TestCase):
 
     def test_tool_registry_loads_from_config(self) -> None:
         registry = load_tool_registry()
-        self.assertIn("bindcraft", registry)
-        self.assertEqual(registry["bindcraft"].name, "bindcraft")
+        self.assertIn("rfd3", registry)
+        self.assertEqual(registry["rfd3"].remote_type, "rfdiffusion")
 
     def test_run_tool_adapter_marks_unconfigured_tools_as_mock(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            invocation = run_tool_adapter("campaign-x", "bindcraft", "generation", "academic", {"hypothesis_id": "h1"}, Path(tmpdir))
+            invocation = run_tool_adapter(
+                "campaign-x",
+                "rfd3",
+                "generation",
+                "academic",
+                {"hypothesis_id": "h1", "output_dir": str(Path(tmpdir) / "out"), "settings": {}},
+                Path(tmpdir),
+            )
             self.assertEqual(invocation["status"], "mock")
-            self.assertIn("adapter_not_configured", invocation["failure_codes"])
+            self.assertIn("missing_tamarind_api_key", invocation["failure_codes"])
+
+    def test_fixture_pdb_writer_creates_local_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = write_fixture_pdb(Path(tmpdir) / "target.pdb", chain_id="A")
+            self.assertTrue(path.exists())
+            self.assertIn("ATOM", path.read_text(encoding="utf-8"))
 
     def test_cli_plan_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -5,23 +5,9 @@
     "commercial_safe": true,
     "maturity": "beta",
     "strengths": ["backbone generation"],
-    "default_command": null
-  },
-  "bindcraft": {
-    "name": "bindcraft",
-    "stages": ["generation"],
-    "commercial_safe": true,
-    "maturity": "beta",
-    "strengths": ["automated binder baseline"],
-    "default_command": null
-  },
-  "proteinmpnn": {
-    "name": "proteinmpnn",
-    "stages": ["sequence_design"],
-    "commercial_safe": true,
-    "maturity": "stable",
-    "strengths": ["backbone-conditioned sequence design"],
-    "default_command": null
+    "default_command": null,
+    "provider": "tamarind",
+    "remote_type": "rfdiffusion"
   },
   "ligandmpnn": {
     "name": "ligandmpnn",
@@ -29,39 +15,9 @@
     "commercial_safe": true,
     "maturity": "beta",
     "strengths": ["context-aware design"],
-    "default_command": null
-  },
-  "rf3": {
-    "name": "rf3",
-    "stages": ["validation"],
-    "commercial_safe": true,
-    "maturity": "beta",
-    "strengths": ["structure validation"],
-    "default_command": null
-  },
-  "chai1": {
-    "name": "chai1",
-    "stages": ["validation"],
-    "commercial_safe": true,
-    "maturity": "beta",
-    "strengths": ["alternative structure prediction"],
-    "default_command": null
-  },
-  "boltz": {
-    "name": "boltz",
-    "stages": ["validation"],
-    "commercial_safe": true,
-    "maturity": "beta",
-    "strengths": ["commercial-safe alternative"],
-    "default_command": null
-  },
-  "openfold3-preview": {
-    "name": "openfold3-preview",
-    "stages": ["validation"],
-    "commercial_safe": true,
-    "maturity": "preview",
-    "strengths": ["open alternative"],
-    "default_command": null
+    "default_command": null,
+    "provider": "tamarind",
+    "remote_type": "ligandmpnn"
   },
   "alphafold3": {
     "name": "alphafold3",
@@ -69,6 +25,8 @@
     "commercial_safe": false,
     "maturity": "restricted",
     "strengths": ["high-capability validation in academic mode"],
-    "default_command": null
+    "default_command": null,
+    "provider": "tamarind",
+    "remote_type": "alphafold"
   }
 }
