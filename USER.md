@@ -8,16 +8,13 @@ When the user asks for a design campaign:
 
 1. restate the design goal in one sentence
 2. resolve only high-value clarifications
-3. run the local wrapper script instead of reconstructing the pipeline in chat
-4. return the campaign directory, report path, and run log path
+3. invoke the allowed local tools, scripts, and external APIs directly
+4. write the campaign artifacts into the workspace
+5. return the campaign directory, report path, and run log path
 
 ## Required execution path
 
-For substantive campaign runs, PicoClaw should call:
-
-```bash
-./scripts/run_picoclaw_campaign.sh --prompt "<user prompt>"
-```
+For substantive campaign runs, PicoClaw should orchestrate the workflow itself.
 
 Optional flags:
 
@@ -27,17 +24,26 @@ Optional flags:
 - `--modality "..."`
 - `--use-fixture`
 
-Do not bypass the wrapper by manually calling Tamarind or rewriting the route in chat unless debugging the backend.
+Useful helper entrypoints may include:
+
+```bash
+python3 -m proteinclaw plan --prompt "<user prompt>" --root .
+```
+
+and repo-local scripts under `scripts/`.
+
+Do not treat one wrapper command as the required workflow. PicoClaw should decide which tools to run, inspect their outputs, and assemble the final response honestly.
 
 ## User-visible outputs
 
-After a successful run, always surface:
+After a substantive run, always surface:
 
 - `artifacts/campaigns/<campaign_id>/report.md`
 - `artifacts/campaigns/<campaign_id>/run_log.md`
 - `artifacts/campaigns/<campaign_id>/tool-invocations.json`
 
 If the run is still queued remotely, say so explicitly and provide the live `run_log.md` path.
+If a required tool failed, say so explicitly and point to the trace or invocation record.
 
 ## Clarification defaults
 

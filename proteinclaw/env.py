@@ -6,7 +6,7 @@ from pathlib import Path
 
 def load_env(root: Path) -> dict[str, str]:
     env: dict[str, str] = {}
-    for name in (".env", ".env.example"):
+    for name in (".env",):
         path = root / name
         if not path.exists():
             continue

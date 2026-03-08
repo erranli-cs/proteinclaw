@@ -9,13 +9,8 @@ from pathlib import Path
 
 from proteinclaw.tamarind import (
     TamarindError,
-    download_result_archive,
-    extract_result_archive,
-    get_result_url,
     has_tamarind_key,
-    submit_job,
-    upload_file,
-    wait_for_job,
+    run_tamarind_job,
 )
 from proteinclaw.schemas import SCHEMA_VERSION, validate_record
 from proteinclaw.utils import stable_id, utc_now
@@ -57,7 +52,14 @@ TOOL_REGISTRY = load_tool_registry()
 
 
 def select_route(execution_mode: str, hypothesis: dict) -> list[str]:
-    return ["rfd3", "ligandmpnn", "alphafold3"]
+    preferred_route = ["rfd3", "ligandmpnn", "alphafold3"]
+    route: list[str] = []
+    for tool in preferred_route:
+        spec = TOOL_REGISTRY[tool]
+        if execution_mode == "commercial_safe" and not spec.commercial_safe:
+            continue
+        route.append(tool)
+    return route
 
 
 def _invocation_record(campaign_id: str, tool: str, stage: str, mode: str, status: str, inputs: dict, outputs: dict, failure_codes: list[str]) -> dict:
@@ -118,39 +120,21 @@ def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs
     output_dir = Path(inputs["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     job_name = stable_id(tool, f"{campaign_id}|{inputs.get('hypothesis_id', tool)}|{utc_now()}")
-    settings = dict(inputs["settings"])
 
     try:
-        upload_path = inputs.get("upload_path")
-        if upload_path:
-            folder = f"proteinclaw/{campaign_id}/{inputs.get('hypothesis_id', tool)}"
-            if logger:
-                logger(f"{tool}: uploading `{upload_path}` to Tamarind folder `{folder}`.")
-            uploaded = upload_file(workdir, Path(upload_path), folder)
-            file_key = inputs.get("file_setting_key")
-            if file_key:
-                settings[file_key] = uploaded["storagePath"]
-            if logger:
-                logger(f"{tool}: upload succeeded as `{uploaded['storagePath']}`.")
-        if logger:
-            logger(f"{tool}: submitting Tamarind job `{job_name}` with settings `{json.dumps(settings, sort_keys=True)}`.")
-        submit_job(workdir, job_name, spec.remote_type or tool, settings)
-        wait_for_job(workdir, job_name, status_callback=(lambda status: logger(f"{tool}: Tamarind status for `{job_name}` -> {status}.") if logger else None))
-        result_url = get_result_url(workdir, job_name)
-        archive_path = output_dir / f"{job_name}.zip"
-        if logger:
-            logger(f"{tool}: downloading result archive from `{result_url}`.")
-        download_result_archive(result_url, archive_path)
-        extracted = extract_result_archive(archive_path, output_dir)
-        if logger:
-            logger(f"{tool}: extracted {len(extracted)} files into `{output_dir}`.")
-        outputs = {
-            "job_name": job_name,
-            "result_url": result_url,
-            "archive_path": str(archive_path),
-            "output_dir": str(output_dir),
-            "downloaded_files": [str(path) for path in extracted],
-        }
+        folder = f"proteinclaw/{campaign_id}/{inputs.get('hypothesis_id', tool)}"
+        outputs = run_tamarind_job(
+            workdir,
+            job_name,
+            spec.remote_type or tool,
+            inputs["settings"],
+            output_dir,
+            upload_path=Path(inputs["upload_path"]) if inputs.get("upload_path") else None,
+            upload_folder=folder,
+            file_setting_key=inputs.get("file_setting_key"),
+            logger=(lambda message: logger(f"{tool}: {message}") if logger else None),
+        )
+        outputs.pop("settings", None)
         return _invocation_record(campaign_id, tool, stage, mode, "pass", inputs, outputs, [])
     except TamarindError as exc:
         if _is_quota_exceeded_error(str(exc)):
@@ -196,6 +180,17 @@ def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs
 
 def run_tool_adapter(campaign_id: str, tool: str, stage: str, mode: str, inputs: dict, workdir: Path, logger=None) -> dict:
     spec = TOOL_REGISTRY[tool]
+    if mode == "commercial_safe" and not spec.commercial_safe:
+        return _invocation_record(
+            campaign_id,
+            tool,
+            stage,
+            mode,
+            "skipped",
+            inputs,
+            {"reason": "license_blocked", "output_dir": inputs.get("output_dir")},
+            ["license_blocked"],
+        )
     if spec.provider == "tamarind":
         if not has_tamarind_key(workdir):
             return _invocation_record(
@@ -212,17 +207,6 @@ def run_tool_adapter(campaign_id: str, tool: str, stage: str, mode: str, inputs:
 
     env_key = f"PROTEINCLAW_{tool.upper().replace('-', '_')}_CMD"
     command = os.environ.get(env_key) or spec.default_command
-    if mode == "commercial_safe" and not spec.commercial_safe:
-        return _invocation_record(
-            campaign_id,
-            tool,
-            stage,
-            mode,
-            "skipped",
-            inputs,
-            {"reason": "license_blocked"},
-            ["license_blocked"],
-        )
     if not command:
         return _invocation_record(
             campaign_id,
