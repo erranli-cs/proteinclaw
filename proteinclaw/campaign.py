@@ -20,12 +20,16 @@ def infer_target_name(prompt: str) -> tuple[str, str, str]:
         return ("HER2", "human", "P04626")
     if "egfr" in lowered or "erbb1" in lowered:
         return ("EGFR", "human", "P00533")
+    if "trka" in lowered or "ntrk1" in lowered:
+        return ("TrkA", "human", "P04629")
     raise ValueError("Could not infer a supported target from the prompt.")
 
 
 def build_campaign_spec(prompt: str, execution_mode: str = "academic") -> dict:
     target_name, species, identifier = infer_target_name(prompt)
     campaign_id = stable_id("campaign", f"{prompt}|{execution_mode}")
+    lowered = prompt.lower()
+    modality = "mini-binder" if "minibinder" in lowered or "mini binder" in lowered else "open"
     spec = {
         "schema_version": SCHEMA_VERSION,
         "campaign_id": campaign_id,
@@ -37,7 +41,7 @@ def build_campaign_spec(prompt: str, execution_mode: str = "academic") -> dict:
         },
         "mechanism_goal": "inhibit",
         "design_space": {
-            "modality": "open",
+            "modality": modality,
             "epitope": None,
             "oligomeric_state": "unspecified",
         },

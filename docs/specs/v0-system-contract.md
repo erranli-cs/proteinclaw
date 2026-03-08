@@ -46,10 +46,11 @@ It is responsible for:
 - applying workspace behavior rules
 - gathering high-value clarifications
 - assembling structured context
-- calling local scripts and external APIs
+- calling local tools, scripts, and external APIs
 - coordinating workflow steps
 - generating concise user-facing summaries
 - writing structured files into the workspace
+- interpreting tool outputs and failures before responding
 
 ### Responsibilities outside PicoClaw
 
@@ -66,6 +67,8 @@ The following responsibilities must be implemented in scripts, adapters, or serv
 - offline learning pipelines
 
 If any of these are simulated temporarily, that simulation must be labeled explicitly.
+
+PicoClaw may invoke these backend components, but it should remain the orchestrator rather than delegating the entire workflow to one opaque wrapper.
 
 ## Execution modes
 

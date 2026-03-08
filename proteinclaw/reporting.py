@@ -20,6 +20,7 @@ def write_artifacts(
     provenance_path = campaign_root / "provenance" / "manifest.json"
     candidates_path = campaign_root / "candidates" / "ranked-candidates.json"
     report_path = campaign_root / "report.md"
+    run_log_path = campaign_root / "run_log.md"
 
     dump_json(campaign_root / "campaign-spec.json", spec)
     dump_json(campaign_root / "target-dossier.json", dossier)
@@ -33,7 +34,7 @@ def write_artifacts(
             "campaign_id": spec["campaign_id"],
             "generated_at": utc_now(),
             "sources": dossier["sources"],
-            "mock_generation": True,
+            "mock_generation": any(candidate["provenance"]["mock_generation"] for candidate in candidates),
         },
     )
 
@@ -83,12 +84,12 @@ def write_artifacts(
         [
             "",
             "## Notes",
-            "- This MVP uses mock candidate generation and routing artifacts.",
-            "- The outputs are traceable and testable but not scientifically validated designs.",
+            "- Tool outputs are downloaded into the local campaign directory whenever remote execution succeeds.",
+            "- Any tool without a configured or successful backend is marked explicitly as mock or failed in the trace.",
             "",
             "## Next Experiments",
-            "- Resolve epitope and modality before heavy generation.",
-            "- Replace mock adapters with real tool wrappers in the next iteration.",
+            "- Inspect the downloaded tool outputs before trusting rankings.",
+            "- Tighten binder-chain selection and AF3 score extraction once Tamarind result formats are observed.",
         ]
     )
 
@@ -107,6 +108,7 @@ def write_artifacts(
             "candidates": str(candidates_path),
             "trace": str(trace_path),
             "provenance": str(provenance_path),
+            "run_log": str(run_log_path),
         },
         "top_candidates": [candidate["candidate_id"] for candidate in top],
         "generated_at": utc_now(),

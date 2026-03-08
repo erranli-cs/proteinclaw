@@ -16,6 +16,7 @@ HER2_FIXTURE = {
         "proteinDescription": {"recommendedName": {"fullName": {"value": "Receptor tyrosine-protein kinase erbB-2"}}},
         "genes": [{"geneName": {"value": "ERBB2"}}],
         "organism": {"scientificName": "Homo sapiens"},
+        "sequence": {"value": "MKTIIALSYIFCLVFADYKDDDDKGGGGSGGGGSGGGGSGGGGSGGGGS"},
     },
     "structures": [
         {"pdb_id": "1N8Z", "description": "HER2 extracellular domain complex"},
@@ -47,7 +48,8 @@ EGFR_FIXTURE = {
         "primaryAccession": "P00533",
         "proteinDescription": {"recommendedName": {"fullName": {"value": "Epidermal growth factor receptor"}}},
         "genes": [{"geneName": {"value": "EGFR"}}],
-        "organism": {"scientificName": "Homo sapiens"}
+        "organism": {"scientificName": "Homo sapiens"},
+        "sequence": {"value": "MRPSGTAGAALLALLAALCPASRALEEKKVCQGTSNKLTQLGTFEDHFLSLQRMFNNCEV"},
     },
     "structures": [
         {"pdb_id": "1IVO", "description": "EGFR kinase domain structure"},
@@ -64,12 +66,37 @@ EGFR_FIXTURE = {
         }
     ]
 }
+
+NTRK1_FIXTURE = {
+    "uniprot": {
+        "primaryAccession": "P04629",
+        "proteinDescription": {"recommendedName": {"fullName": {"value": "High affinity nerve growth factor receptor"}}},
+        "genes": [{"geneName": {"value": "NTRK1"}}],
+        "organism": {"scientificName": "Homo sapiens"},
+        "sequence": {"value": "MRLPAAALALLLLAASLQGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+    },
+    "structures": [
+        {"pdb_id": "2IFG", "description": "TrkA extracellular domain in complex with NGF"},
+        {"pdb_id": "1WWW", "description": "TrkA extracellular domain structure"},
+    ],
+    "literature": [
+        {
+            "source": "bootstrap_fixture",
+            "title": "Structural basis of neurotrophin-TrkA interface recognition identifies the ligand-binding surface.",
+            "identifier": "fixture-ntrk1-1",
+            "year": 2026,
+            "url": None,
+            "reason": "Bootstrap literature placeholder for offline tests.",
+        }
+    ],
+}
 BINDER_TERMS = ("binder", "binding", "antibody", "nanobody", "miniprotein", "protein")
 
 
 FIXTURES = {
     "P04626": HER2_FIXTURE,
     "P00533": EGFR_FIXTURE,
+    "P04629": NTRK1_FIXTURE,
 }
 
 
@@ -101,6 +128,33 @@ def fetch_pdb_structures(query: str) -> tuple[list[dict], dict]:
     payload = _fetch_json(url)
     results = [{"pdb_id": item["identifier"], "description": "RCSB search hit"} for item in payload.get("result_set", [])]
     return results, {"source": "RCSB PDB", "query": query, "url": url, "retrieved_at": utc_now()}
+
+
+def download_pdb_file(pdb_id: str, output_path: Path) -> Path:
+    url = f"https://files.rcsb.org/download/{urllib.parse.quote(pdb_id)}.pdb"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(url, headers={"User-Agent": "proteinclaw/0.1.0"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        output_path.write_bytes(response.read())
+    return output_path
+
+
+def write_fixture_pdb(output_path: Path, chain_id: str = "A") -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        "\n".join(
+            [
+                f"ATOM      1  N   GLY {chain_id}   1      11.104  13.207   9.735  1.00 20.00           N",
+                f"ATOM      2  CA  GLY {chain_id}   1      12.560  13.207   9.735  1.00 20.00           C",
+                f"ATOM      3  C   GLY {chain_id}   1      13.104  14.607   9.735  1.00 20.00           C",
+                "TER",
+                "END",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return output_path
 
 
 def fetch_europe_pmc_literature(query: str, limit: int = 3) -> tuple[list[dict], dict]:
@@ -238,6 +292,7 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
             (((uniprot_payload.get("proteinDescription") or {}).get("recommendedName") or {}).get("fullName") or {}).get("value")
         ),
         "organism": (uniprot_payload.get("organism") or {}).get("scientificName"),
+        "sequence": (uniprot_payload.get("sequence") or {}).get("value"),
         "notes": [
             "Default target region is extracellular domain unless user specifies otherwise.",
             "Glycosylation and epitope accessibility should be checked during branch setup.",

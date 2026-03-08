@@ -31,6 +31,7 @@ Defines PicoClaw's operating behavior:
 - output expectations
 - memory policy
 - failure handling
+- orchestration expectations
 
 ### `TOOLS.md`
 
@@ -69,6 +70,15 @@ The workspace agent should ask users follow-up questions only when the answer ma
 - hard scientific constraints
 
 Questions should explain why the answer matters.
+
+## Orchestration contract
+
+PicoClaw is expected to orchestrate campaign execution directly.
+
+- It should choose and invoke allowed tools itself.
+- It may use repo scripts or CLIs as helpers.
+- It should inspect tool outputs and failures before responding.
+- It should not reduce the workflow to one mandatory wrapper command.
 
 ## Memory contract
 

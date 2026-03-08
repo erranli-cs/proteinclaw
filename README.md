@@ -2,17 +2,34 @@
 
 Minimal MVP scaffold for Clawd, an auditable protein-design copilot.
 
-This branch does not run real scientific design tools yet. It does run a traceable end-to-end campaign flow that:
+This branch can submit the requested remote jobs through Tamarind when `TAMARIND` is configured:
 
 - parses a natural-language binder-design prompt
 - builds a target dossier
 - generates hypotheses
-- applies license-aware routing
-- creates mock candidate records
+- routes through `rfd3 -> ligandmpnn -> alphafold3`
+- downloads tool outputs into the local campaign directory
 - ranks candidates
 - writes a reproducible artifact package
 - supports interactive clarification capture
 - uses a versioned tool registry and honest adapter fallback behavior
+
+## PicoClaw
+
+This repo is now PicoClaw-ready.
+
+PicoClaw should use the workspace files:
+
+- [AGENTS.md](/Users/daanishhindustano/Documents/projects/proteinclaw/AGENTS.md)
+- [TOOLS.md](/Users/daanishhindustano/Documents/projects/proteinclaw/TOOLS.md)
+- [HEARTBEAT.md](/Users/daanishhindustano/Documents/projects/proteinclaw/HEARTBEAT.md)
+- [USER.md](/Users/daanishhindustano/Documents/projects/proteinclaw/USER.md)
+
+PicoClaw should orchestrate the workflow itself by reading those files, deciding which allowed tools to run, and writing campaign artifacts into the workspace.
+
+Repo scripts and CLIs are helper entrypoints, not the required PicoClaw control plane.
+
+See [picoclaw.md](/Users/daanishhindustano/Documents/projects/proteinclaw/docs/runbooks/picoclaw.md) for the intended interaction model.
 
 ## Run
 
@@ -33,10 +50,9 @@ Or run the CLI directly:
 ```bash
 python3 -m proteinclaw plan \
   --prompt "Design me a protein binder that inhibits HER2" \
-  --execution-mode commercial_safe \
+  --execution-mode academic \
   --epitope "dimerization-relevant surface" \
   --modality "mini-binder" \
-  --use-fixture \
   --root .
 ```
 
