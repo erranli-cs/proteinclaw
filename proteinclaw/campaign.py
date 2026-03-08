@@ -18,6 +18,8 @@ def infer_target_name(prompt: str) -> tuple[str, str, str]:
     lowered = prompt.lower()
     if "her2" in lowered or "erbb2" in lowered:
         return ("HER2", "human", "P04626")
+    if "egfr" in lowered or "erbb1" in lowered:
+        return ("EGFR", "human", "P00533")
     raise ValueError("Could not infer a supported target from the prompt.")
 
 
@@ -75,6 +77,29 @@ def required_clarifications(spec: dict) -> list[Clarification]:
             )
         )
     return questions
+
+
+def resolve_clarifications(spec: dict, interactive: bool = False, answers: dict[str, str] | None = None) -> tuple[dict[str, str], list[dict]]:
+    answers = dict(answers or {})
+    resolved: list[dict] = []
+    for item in required_clarifications(spec):
+        value = answers.get(item.key)
+        if value is None and interactive:
+            prompt = f"{item.question} [{item.default}]: "
+            response = input(prompt).strip()
+            value = response or item.default
+        if value is None:
+            value = item.default
+        answers[item.key] = value
+        resolved.append(
+            {
+                "key": item.key,
+                "value": value,
+                "decision_impact": item.decision_impact,
+                "default_applied": value == item.default,
+            }
+        )
+    return answers, resolved
 
 
 def apply_clarifications(spec: dict, answers: dict[str, str] | None = None) -> dict:

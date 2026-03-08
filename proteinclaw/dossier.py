@@ -42,8 +42,35 @@ HER2_FIXTURE = {
     ],
 }
 
-
+EGFR_FIXTURE = {
+    "uniprot": {
+        "primaryAccession": "P00533",
+        "proteinDescription": {"recommendedName": {"fullName": {"value": "Epidermal growth factor receptor"}}},
+        "genes": [{"geneName": {"value": "EGFR"}}],
+        "organism": {"scientificName": "Homo sapiens"}
+    },
+    "structures": [
+        {"pdb_id": "1IVO", "description": "EGFR kinase domain structure"},
+        {"pdb_id": "1YY9", "description": "EGFR extracellular region structure"}
+    ],
+    "literature": [
+        {
+            "source": "bootstrap_fixture",
+            "title": "EGFR-targeted protein binder concepts remain relevant for receptor blockade.",
+            "identifier": "fixture-egfr-1",
+            "year": 2026,
+            "url": None,
+            "reason": "Bootstrap literature placeholder for offline tests."
+        }
+    ]
+}
 BINDER_TERMS = ("binder", "binding", "antibody", "nanobody", "miniprotein", "protein")
+
+
+FIXTURES = {
+    "P04626": HER2_FIXTURE,
+    "P00533": EGFR_FIXTURE,
+}
 
 
 def _fetch_json(url: str) -> dict:
@@ -153,10 +180,11 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
             cache_path.unlink()
             warnings.append("Discarded stale cached dossier due to schema mismatch.")
 
+    fixture = FIXTURES.get(identifier)
     if use_fixture:
-        uniprot_payload = HER2_FIXTURE["uniprot"]
-        structures = HER2_FIXTURE["structures"]
-        literature = HER2_FIXTURE["literature"]
+        uniprot_payload = (fixture or {}).get("uniprot", {})
+        structures = (fixture or {}).get("structures", [])
+        literature = (fixture or {}).get("literature", [])
         sources.extend(
             [
                 {"source": "bootstrap_fixture", "identifier": identifier, "retrieved_at": utc_now()},
@@ -170,7 +198,7 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
             sources.append(source_meta)
         except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
             warnings.append(f"UniProt retrieval failed: {exc}")
-            uniprot_payload = HER2_FIXTURE["uniprot"] if identifier == "P04626" else {}
+            uniprot_payload = (fixture or {}).get("uniprot", {})
             sources.append({"source": "bootstrap_fixture_fallback", "identifier": identifier, "retrieved_at": utc_now()})
 
         try:
@@ -178,7 +206,7 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
             sources.append(source_meta)
         except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
             warnings.append(f"RCSB retrieval failed: {exc}")
-            structures = HER2_FIXTURE["structures"] if identifier == "P04626" else []
+            structures = (fixture or {}).get("structures", [])
             sources.append({"source": "bootstrap_fixture_fallback", "identifier": f"{target_name} structures", "retrieved_at": utc_now()})
 
         gene_name = (((uniprot_payload.get("genes") or [{}])[0].get("geneName") or {}).get("value"))
@@ -190,8 +218,8 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
             literature.extend(_filter_literature_hits(europe_pmc_results, keywords))
         except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
             warnings.append(f"Europe PMC retrieval failed: {exc}")
-            if identifier == "P04626":
-                literature.extend(HER2_FIXTURE["literature"])
+            if fixture:
+                literature.extend(fixture.get("literature", []))
             sources.append({"source": "bootstrap_fixture_fallback", "identifier": f"{target_name} literature", "retrieved_at": utc_now()})
 
         try:
