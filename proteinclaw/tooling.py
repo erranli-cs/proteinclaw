@@ -83,7 +83,7 @@ def _run_tamarind_job(campaign_id: str, tool: str, stage: str, mode: str, inputs
     spec = TOOL_REGISTRY[tool]
     output_dir = Path(inputs["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
-    job_name = stable_id(tool, f"{campaign_id}|{inputs.get('hypothesis_id', tool)}")
+    job_name = stable_id(tool, f"{campaign_id}|{inputs.get('hypothesis_id', tool)}|{utc_now()}")
     settings = dict(inputs["settings"])
 
     try:

@@ -6,11 +6,12 @@ import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
+from urllib.error import HTTPError
 
 from proteinclaw.env import get_env_value
 
 
-BASE_URL = "https://api.tamarind.com/v1"
+BASE_URL = "https://app.tamarind.bio/api"
 
 
 class TamarindError(RuntimeError):
@@ -45,7 +46,7 @@ def _request(root: Path, method: str, path: str, body: bytes | None = None, cont
 def request_json(root: Path, method: str, path: str, payload: dict | None = None) -> dict:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     response = _request(root, method, path, body=body, content_type="application/json")
-    if not response:
+    if not response or not response.strip():
         return {}
     return json.loads(response)
 
@@ -58,14 +59,26 @@ def request_text(root: Path, method: str, path: str, payload: dict | None = None
 def upload_file(root: Path, local_path: Path, folder: str) -> dict:
     path = f"/upload/{urllib.parse.quote(local_path.name)}?folder={urllib.parse.quote(folder)}"
     body = local_path.read_bytes()
-    response = _request(root, "PUT", path, body=body, content_type="application/octet-stream")
-    uploaded = json.loads(response)
+    try:
+        response = _request(root, "PUT", path, body=body, content_type="application/octet-stream")
+    except HTTPError as exc:
+        if exc.code != 308 or not exc.headers.get("Location"):
+            raise
+        redirected = urllib.request.Request(
+            exc.headers["Location"],
+            data=body,
+            headers=_headers(root, content_type="application/octet-stream"),
+            method="PUT",
+        )
+        with urllib.request.urlopen(redirected, timeout=60) as response:
+            response = response.read().decode("utf-8")
+    uploaded = json.loads(response) if response.strip() else {"message": "File uploaded successfully"}
     uploaded["storagePath"] = f"{folder}/{local_path.name}"
     return uploaded
 
 
 def submit_job(root: Path, job_name: str, job_type: str, settings: dict) -> dict:
-    return request_json(
+    response = request_text(
         root,
         "POST",
         "/submit-job",
@@ -75,10 +88,24 @@ def submit_job(root: Path, job_name: str, job_type: str, settings: dict) -> dict
             "settings": settings,
         },
     )
+    if not response.strip():
+        return {"message": "Job submitted successfully", "jobName": job_name}
+    try:
+        return json.loads(response)
+    except json.JSONDecodeError:
+        return {"message": response.strip(), "jobName": job_name}
 
 
 def get_job(root: Path, job_name: str) -> dict:
-    return request_json(root, "GET", f"/jobs?jobName={urllib.parse.quote(job_name)}")
+    payload = request_json(root, "GET", f"/jobs?jobName={urllib.parse.quote(job_name)}")
+    if "JobStatus" in payload:
+        return payload
+    for key, value in payload.items():
+        if key == "statuses":
+            continue
+        if isinstance(value, dict) and value.get("JobName") == job_name:
+            return value
+    return payload
 
 
 def wait_for_job(root: Path, job_name: str, timeout_seconds: int = 1800, poll_interval: int = 10) -> dict:
