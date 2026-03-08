@@ -421,8 +421,11 @@ def preprocess_csv_and_pkl(args, output_dir: str) -> str:
             input_info, write_dir=output_dir, sample_id=sample_id
         )
         metadata_df = pd.DataFrame([metadata])
-        header = False if sample_id > 0 else True
-        metadata_df.to_csv(csv_path, index=False, mode="a", header=header)
+        # Use "w" for the first sample so that re-runs always start with a
+        # clean file instead of appending a second header mid-file.
+        mode = "w" if sample_id == 0 else "a"
+        header = sample_id == 0
+        metadata_df.to_csv(csv_path, index=False, mode=mode, header=header)
 
     return csv_path
 

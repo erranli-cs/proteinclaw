@@ -393,7 +393,7 @@ def run_protein_mpnn(output_dir: str, csv_path: str, chain_list: str, cfg: dict)
     print(f"[inverse_folding] Running ProteinMPNN → {out_folder}")
     protein_mpnn_run.main(args)
 
-def mpnn_fasta_to_csv(input_dirs: list, output_csv: str, suffix: str = ".pdb", top_n: int = 5):
+def mpnn_fasta_to_csv(input_dirs: list, output_csv: str, suffix: str = ".pdb", top_n: int = 3):
 
     seen_seqs = set()
     # link_name -> list of (score_float, seq_idx, seq_str)
@@ -535,23 +535,25 @@ def graft_sequences_to_pdbs(
 # FAMPNN sidechain packing
 # ---------------------------------------------------------------------------
 
-def pack_sidechains_dir(input_dir: str, output_dir: str, checkpoint: str) -> None:
+def pack_sidechains_dir(input_dir: str, output_dir: str, checkpoint: str,
+                        batch_size: int = 32) -> None:
     """Run FAMPNN sidechain packing on every PDB in input_dir.
 
-    Imports pack_sidechains from the local fampnn/ subdirectory so no separate
-    installation is required.  Packed full-atom PDBs are written to output_dir
+    Loads the model checkpoint once and processes all PDBs in batches for
+    maximum GPU throughput.  Packed full-atom PDBs are written to output_dir
     with the same filename as the input.
 
     Args:
         input_dir:   Directory of backbone+sequence PDB files (e.g. mpnn_output/).
         output_dir:  Destination directory for packed full-atom PDBs.
         checkpoint:  Path to FAMPNN weights (.pt).  Use fampnn_0_3.pt for FAMPNN 3.0.
+        batch_size:  Structures per GPU forward pass (reduce if OOM).
     """
     import sys
     fampnn_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fampnn")
     if fampnn_dir not in sys.path:
         sys.path.insert(0, fampnn_dir)
-    from pack_sidechains import pack_sidechains  # type: ignore[import]  # runtime sys.path insert
+    from pack_sidechains import pack_sidechains_batch  # type: ignore[import]
 
     os.makedirs(output_dir, exist_ok=True)
     pdb_files = sorted(glob.glob(os.path.join(input_dir, "*.pdb")))
@@ -559,10 +561,6 @@ def pack_sidechains_dir(input_dir: str, output_dir: str, checkpoint: str) -> Non
         print(f"[fampnn] No PDB files found in {input_dir}")
         return
 
-    for pdb_path in pdb_files:
-        name = os.path.basename(pdb_path)
-        out_path = os.path.join(output_dir, name)
-        print(f"[fampnn] Packing {name} ...")
-        pack_sidechains(pdb_path, out_path, checkpoint)
-
+    out_files = [os.path.join(output_dir, os.path.basename(p)) for p in pdb_files]
+    pack_sidechains_batch(pdb_files, out_files, checkpoint, batch_size=batch_size)
     print(f"[fampnn] {len(pdb_files)} structures packed → {output_dir}")

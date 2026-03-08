@@ -19,10 +19,25 @@ import os
 import sys
 import time
 
+import ctypes
 import torch
 from torch.nn.parameter import Parameter
 
 sys.path.append(os.path.dirname(__file__))
+
+# Pre-load torch shared libs so importlib can resolve them without LD_LIBRARY_PATH.
+def _preload_torch_libs():
+    torch_lib_dir = os.path.join(os.path.dirname(torch.__file__), "lib")
+    for lib in ("libc10.so", "libc10_cuda.so", "libtorch_cpu.so",
+                "libtorch_cuda.so", "libtorch_python.so"):
+        path = os.path.join(torch_lib_dir, lib)
+        if os.path.exists(path):
+            try:
+                ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                pass
+
+_preload_torch_libs()
 
 try:
     fastfold_layer_norm_cuda = importlib.import_module("fastfold_layer_norm_cuda")
