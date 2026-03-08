@@ -160,7 +160,7 @@ class CampaignTests(unittest.TestCase):
             mock_summary_path = Path(tmpdir) / "out" / "mock-response.json"
             with (
                 mock.patch("proteinclaw.tooling.has_tamarind_key", return_value=True),
-                mock.patch("proteinclaw.tooling.submit_job", side_effect=TamarindError("HTTP 400: Monthly job limit exceeded.")),
+                mock.patch("proteinclaw.tooling.run_tamarind_job", side_effect=TamarindError("HTTP 400: Monthly job limit exceeded.")),
             ):
                 invocation = run_tool_adapter(
                     "campaign-x",
@@ -185,7 +185,7 @@ class CampaignTests(unittest.TestCase):
             mock_fasta_path = Path(tmpdir) / "out" / "mock_sequences.fa"
             with (
                 mock.patch("proteinclaw.tooling.has_tamarind_key", return_value=True),
-                mock.patch("proteinclaw.tooling.submit_job", side_effect=TamarindError("HTTP 400: Monthly job limit exceeded.")),
+                mock.patch("proteinclaw.tooling.run_tamarind_job", side_effect=TamarindError("HTTP 400: Monthly job limit exceeded.")),
             ):
                 invocation = run_tool_adapter(
                     "campaign-x",

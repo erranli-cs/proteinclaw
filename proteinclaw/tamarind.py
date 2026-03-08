@@ -12,6 +12,7 @@ from proteinclaw.env import get_env_value
 
 
 BASE_URL = "https://app.tamarind.bio/api"
+DEFAULT_POLL_INTERVAL_SECONDS = 60
 
 
 class TamarindError(RuntimeError):
@@ -118,7 +119,13 @@ def get_job(root: Path, job_name: str) -> dict:
     return payload
 
 
-def wait_for_job(root: Path, job_name: str, timeout_seconds: int = 1800, poll_interval: int = 10, status_callback=None) -> dict:
+def wait_for_job(
+    root: Path,
+    job_name: str,
+    timeout_seconds: int = 1800,
+    poll_interval: int = DEFAULT_POLL_INTERVAL_SECONDS,
+    status_callback=None,
+) -> dict:
     deadline = time.time() + timeout_seconds
     last_status = None
     while time.time() < deadline:
@@ -150,3 +157,54 @@ def extract_result_archive(zip_path: Path, output_dir: Path) -> list[Path]:
     with zipfile.ZipFile(zip_path, "r") as archive:
         archive.extractall(output_dir)
         return [output_dir / name for name in archive.namelist()]
+
+
+def run_tamarind_job(
+    root: Path,
+    job_name: str,
+    job_type: str,
+    settings: dict,
+    output_dir: Path,
+    upload_path: Path | None = None,
+    upload_folder: str | None = None,
+    file_setting_key: str | None = None,
+    logger=None,
+    poll_interval: int = DEFAULT_POLL_INTERVAL_SECONDS,
+) -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_settings = dict(settings)
+    if upload_path:
+        if not upload_folder:
+            raise TamarindError("upload_folder is required when upload_path is provided.")
+        if logger:
+            logger(f"uploading `{upload_path}` to Tamarind folder `{upload_folder}`.")
+        uploaded = upload_file(root, upload_path, upload_folder)
+        if file_setting_key:
+            resolved_settings[file_setting_key] = uploaded["storagePath"]
+        if logger:
+            logger(f"upload succeeded as `{uploaded['storagePath']}`.")
+    if logger:
+        logger(f"submitting Tamarind job `{job_name}` with settings `{json.dumps(resolved_settings, sort_keys=True)}`.")
+    submit_job(root, job_name, job_type, resolved_settings)
+    wait_for_job(
+        root,
+        job_name,
+        poll_interval=poll_interval,
+        status_callback=(lambda status: logger(f"Tamarind status for `{job_name}` -> {status}.") if logger else None),
+    )
+    result_url = get_result_url(root, job_name)
+    archive_path = output_dir / f"{job_name}.zip"
+    if logger:
+        logger(f"downloading result archive from `{result_url}`.")
+    download_result_archive(result_url, archive_path)
+    extracted = extract_result_archive(archive_path, output_dir)
+    if logger:
+        logger(f"extracted {len(extracted)} files into `{output_dir}`.")
+    return {
+        "job_name": job_name,
+        "result_url": result_url,
+        "archive_path": str(archive_path),
+        "output_dir": str(output_dir),
+        "downloaded_files": [str(path) for path in extracted],
+        "settings": resolved_settings,
+    }
