@@ -1,2 +1,27 @@
 weights/
 weights.zip
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Compiled extensions / build artifacts
+*.so
+*.o
+*.a
+*.dylib
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Output directories
+output/
+output_v0/
+binder_out_*/
+TREM2_*/
+fampnn_designs/
+mpnn_output/
+
+# Misc
+view
