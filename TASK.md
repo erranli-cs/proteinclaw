@@ -11,6 +11,28 @@ Assumptions baked into these tasks:
 - The initial product scope is protein binder design against protein targets.
 - The first vertical slice should optimize for reproducibility, traceability, and tool routing, not broad biology coverage.
 
+## Task 0: Bootstrap the repository contract
+
+### Goal
+Create the minimum repo-level documents and checks needed to keep the project from drifting immediately.
+
+### Requirements
+
+- Add the base repo operating rules for:
+  - git hygiene
+  - TDD expectations
+  - PR cleanliness
+  - code review workflow
+- Add the initial workspace-facing agent instructions used by PicoClaw.
+- Add a lightweight verification command that checks required repo contract files exist.
+- Keep the bootstrap intentionally small. It should constrain the project, not simulate the whole system.
+
+### Success criteria
+
+- A new contributor can open the repo and understand how to work in it.
+- PicoClaw-facing instructions exist in the repo root.
+- A single verification command passes and fails loudly when required contract files are missing.
+
 ## Task 1: Define the product boundary and system contract
 
 ### Goal
@@ -425,21 +447,22 @@ Ship one working path from natural-language prompt to ranked HER2 binder campaig
 
 ## Recommended build order
 
-1. Task 1: Define the product boundary and system contract
-2. Task 2: Create the PicoClaw workspace contract
-3. Task 3: Specify the core data model
-4. Task 4: Build the target dossier pipeline
-5. Task 5: Implement clarification and campaign-spec generation
-6. Task 6: Build the hypothesis generation module
-7. Task 7: Build the tool registry and routing policy
-8. Task 8: Build the tool adapter layer
-9. Task 9: Build the trace store and artifact layout
-10. Task 10: Implement the first evaluation and ranking engine
-11. Task 11: Build the user-facing report generator
-12. Task 15: Build the first end-to-end vertical slice
-13. Task 12: Add literature scouting and tool-watch automation
-14. Task 13: Add benchmark and regression evaluation
-15. Task 14: Define the offline learning pipeline
+1. Task 0: Bootstrap the repository contract
+2. Task 1: Define the product boundary and system contract
+3. Task 2: Create the PicoClaw workspace contract
+4. Task 3: Specify the core data model
+5. Task 4: Build the target dossier pipeline
+6. Task 5: Implement clarification and campaign-spec generation
+7. Task 6: Build the hypothesis generation module
+8. Task 7: Build the tool registry and routing policy
+9. Task 8: Build the tool adapter layer
+10. Task 9: Build the trace store and artifact layout
+11. Task 10: Implement the first evaluation and ranking engine
+12. Task 11: Build the user-facing report generator
+13. Task 15: Build the first end-to-end vertical slice
+14. Task 12: Add literature scouting and tool-watch automation
+15. Task 13: Add benchmark and regression evaluation
+16. Task 14: Define the offline learning pipeline
 
 ## Notes
 
