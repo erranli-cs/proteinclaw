@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "required": ["schema_version", "campaign_id", "report_path", "artifact_paths", "top_candidates", "generated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "2026-03-08"},
+    "campaign_id": {"type": "string"},
+    "report_path": {"type": "string"},
+    "artifact_paths": {"type": "object"},
+    "top_candidates": {"type": "array", "items": {"type": "string"}},
+    "generated_at": {"type": "string"}
+  }
+}

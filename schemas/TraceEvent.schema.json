@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "required": ["schema_version", "time", "campaign_id", "type", "object_id", "human_visible_summary", "details"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "2026-03-08"},
+    "time": {"type": "string"},
+    "campaign_id": {"type": "string"},
+    "type": {"type": "string"},
+    "object_id": {"type": "string"},
+    "human_visible_summary": {"type": "string"},
+    "details": {"type": "object"}
+  }
+}

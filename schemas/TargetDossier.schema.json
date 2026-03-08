@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "required": ["schema_version", "campaign_id", "target", "summary", "sources", "annotations", "structures", "literature", "warnings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "2026-03-08"},
+    "campaign_id": {"type": "string"},
+    "target": {"type": "object"},
+    "summary": {"type": "string"},
+    "sources": {"type": "array", "items": {"type": "object"}},
+    "annotations": {"type": "object"},
+    "structures": {"type": "array", "items": {"type": "object"}},
+    "literature": {"type": "array", "items": {"type": "object"}},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  }
+}

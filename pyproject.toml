@@ -12,5 +12,8 @@ authors = [
   { name = "DaanishHindustaniTR" }
 ]
 
+[project.scripts]
+proteinclaw = "proteinclaw.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["proteinclaw*"]

@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": ["schema_version", "campaign_id", "task_type", "target", "mechanism_goal", "design_space", "constraints", "budget", "execution_mode"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "2026-03-08"},
+    "campaign_id": {"type": "string"},
+    "task_type": {"type": "string"},
+    "target": {
+      "type": "object",
+      "required": ["name", "species", "identifier"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {"type": "string"},
+        "species": {"type": "string"},
+        "identifier": {"type": "string"}
+      }
+    },
+    "mechanism_goal": {"type": "string"},
+    "design_space": {"type": "object"},
+    "constraints": {"type": "object"},
+    "budget": {"type": "object"},
+    "execution_mode": {"type": "string", "enum": ["academic", "commercial_safe"]}
+  }
+}
