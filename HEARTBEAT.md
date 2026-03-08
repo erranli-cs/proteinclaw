@@ -6,6 +6,20 @@ The point is controlled scouting, not random browsing.
 
 ## Recurring responsibilities
 
+### Reference data checks
+
+Check and refresh canonical biological reference sources used by the system:
+
+- UniProt
+- RCSB PDB
+
+Use these sources to track:
+
+- target sequence and annotation changes
+- new structures and complexes
+- updated cross-references
+- target-relevant metadata that may affect dossier quality or routing
+
 ### Literature scouting
 
 Check for recent work related to:
@@ -19,6 +33,8 @@ Check for recent work related to:
 
 Preferred source classes:
 
+- UniProt
+- RCSB PDB
 - PubMed and Europe PMC
 - bioRxiv and arXiv
 - official project repositories
