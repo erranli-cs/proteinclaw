@@ -73,8 +73,7 @@ class CampaignTests(unittest.TestCase):
             manifest_path = Path(result["manifest"]["artifact_paths"]["candidates"])
             self.assertTrue(manifest_path.exists())
             candidates = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertGreaterEqual(len(candidates), 3)
-            self.assertGreater(candidates[0]["final_score"], candidates[-1]["final_score"])
+            self.assertEqual(len(candidates), 1)
             self.assertGreaterEqual(len(result["target_dossier"]["literature"]), 2)
             self.assertIn("literature references", result["target_dossier"]["summary"])
             self.assertTrue(any(event["type"] == "tool_invoked" for event in result["trace_events"]))
@@ -82,7 +81,9 @@ class CampaignTests(unittest.TestCase):
             self.assertTrue(run_log_path.exists())
             self.assertIn("## Planning", run_log_path.read_text(encoding="utf-8"))
             rfd3_invocation = next(item for item in result["tool_invocations"] if item["tool"] == "rfd3")
-            self.assertEqual(rfd3_invocation["inputs"]["settings"]["numDesigns"], 10)
+            self.assertEqual(rfd3_invocation["inputs"]["settings"]["numDesigns"], 1)
+            ligand_invocation = next(item for item in result["tool_invocations"] if item["tool"] == "ligandmpnn")
+            self.assertEqual(ligand_invocation["inputs"]["settings"]["numSequences"], 1)
 
     def test_stale_dossier_cache_is_rebuilt(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -339,7 +340,7 @@ class CampaignTests(unittest.TestCase):
             )
             output = export_learning_dataset(root)
             payload = json.loads(output.read_text(encoding="utf-8"))
-            self.assertGreaterEqual(payload["row_count"], 3)
+            self.assertEqual(payload["row_count"], 1)
             self.assertIn("score_components", payload["rows"][0])
 
 

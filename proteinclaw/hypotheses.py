@@ -23,35 +23,23 @@ def generate_hypotheses(spec: dict, dossier: dict) -> list[dict]:
     else:
         base = [
             {
-                "name": "domain-ii-blockade",
-                "objective": f"Block a dimerization-relevant extracellular surface on {target_name}.",
-                "region_of_interest": "Extracellular domain II",
+                "name": "focused-pocket-blockade" if spec["target"]["identifier"].startswith("PDB:") else "domain-ii-blockade",
+                "objective": (
+                    f"Occupy the requested pocket on {target_name} with a single focused minibinder design."
+                    if spec["target"]["identifier"].startswith("PDB:")
+                    else f"Block a dimerization-relevant extracellular surface on {target_name}."
+                ),
+                "region_of_interest": (
+                    "User-specified pocket residues"
+                    if spec["target"]["identifier"].startswith("PDB:")
+                    else "Extracellular domain II"
+                ),
                 "exclusion_zones": ["Known glycan-dense surfaces"],
                 "scaffold_bias": "mini-binder",
                 "validation_metrics": ["complex_confidence", "epitope_correctness", "developability"],
                 "stop_criteria": ["low_interface_confidence", "off_epitope"],
-                "assumptions": ["Extracellular inhibition is a valid default.", "Domain II access is sufficient for binding."],
-            },
-            {
-                "name": "therapeutic-epitope-competition",
-                "objective": f"Compete with a known therapeutic epitope on {target_name}.",
-                "region_of_interest": "Known antibody-accessible extracellular epitope",
-                "exclusion_zones": ["Buried receptor core"],
-                "scaffold_bias": "repeat protein",
-                "validation_metrics": ["complex_confidence", "hotspot_agreement", "epitope_correctness"],
-                "stop_criteria": ["predictor_disagreement", "poor_packing"],
-                "assumptions": ["Therapeutic epitope mimicry is acceptable.", "Competitive mechanism is desirable."],
-            },
-            {
-                "name": "avidity-biased-clustering",
-                "objective": f"Generate a binder concept that favors receptor clustering or nonproductive engagement on {target_name}.",
-                "region_of_interest": "Cell-surface accessible extracellular patch",
-                "exclusion_zones": ["Membrane-proximal steric clash zone"],
-                "scaffold_bias": "open",
-                "validation_metrics": ["complex_confidence", "diversity", "developability"],
-                "stop_criteria": ["aggregation_risk", "surface_hydrophobics"],
-                "assumptions": ["Avidity-oriented concepts are worth keeping in the search program."],
-            },
+                "assumptions": ["Run a single focused design branch before broadening the search space."],
+            }
         ]
     evidence_refs = [source["source"] for source in dossier["sources"]]
     records: list[dict] = []

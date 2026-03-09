@@ -175,7 +175,7 @@ def run_campaign(
                         "targetChains": [target_chain],
                         "binderLength": hotspot_plan.get("binder_length", "20-30"),
                         "binderHotspots": hotspot_plan.get("binder_hotspots", {}),
-                        "numDesigns": 10,
+                        "numDesigns": 1,
                         "verify": False,
                     },
                 }
@@ -187,7 +187,7 @@ def run_campaign(
                     "file_setting_key": "pdbFile",
                     "settings": {
                         "designedChains": ["B"],
-                        "numSequences": 2,
+                        "numSequences": 1,
                         "temperature": 0.1,
                         "noiseLevel": "0.2",
                         "omitAAs": "C",
