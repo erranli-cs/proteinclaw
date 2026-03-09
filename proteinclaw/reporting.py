@@ -13,11 +13,55 @@ def _campaign_ui_slug(campaign_id: str) -> str:
     return f"campine-{campaign_id}"
 
 
-def _render_report_ui(spec: dict, dossier: dict, hypotheses: list[dict], candidates: list[dict], manifest_time: str) -> str:
+def _find_alphafold_outputs(invocations: list[dict], root: Path) -> dict[str, str]:
+    for invocation in invocations:
+        if invocation.get("tool") != "alphafold3":
+            continue
+        for path in invocation.get("outputs", {}).get("downloaded_files", []):
+            candidate = Path(path)
+            if candidate.suffix.lower() == ".pdb" and "unrelaxed" in candidate.name:
+                outputs = {"pdb": str(candidate.relative_to(root))}
+                score_json = next(
+                    (
+                        str(Path(item).relative_to(root))
+                        for item in invocation.get("outputs", {}).get("downloaded_files", [])
+                        if str(item).lower().endswith(".json") and "scores_rank" in Path(item).name
+                    ),
+                    None,
+                )
+                if score_json:
+                    outputs["scores"] = score_json
+                return outputs
+    return {}
+
+
+def _render_report_ui(
+    spec: dict,
+    dossier: dict,
+    hypotheses: list[dict],
+    invocations: list[dict],
+    candidates: list[dict],
+    manifest_time: str,
+    artifact_links: dict[str, str],
+) -> str:
     top = candidates[:3]
     primary = candidates[0] if candidates else None
     target_identifier = spec["target"]["identifier"]
     target_label = f"{spec['target']['name']} ({target_identifier})"
+    tool_statuses = {item["tool"]: item["status"] for item in invocations}
+    alphafold_outputs = artifact_links.get("alphafold", {})
+    overall_status = "complete"
+    if any(status == "failed" for status in tool_statuses.values()):
+        overall_status = "degraded"
+    elif any(status in {"mock", "skipped"} for status in tool_statuses.values()):
+        overall_status = "partial"
+
+    def badge(label: str, tone: str = "neutral") -> str:
+        return f'<span class="badge badge-{tone}">{html.escape(label)}</span>'
+
+    def artifact_href(name: str) -> str:
+        return html.escape(artifact_links[name])
+
     candidate_cards = []
     for candidate in top:
         validation = ", ".join(f"{key}: {value}" for key, value in candidate["validation"].items()) or "pending"
@@ -47,6 +91,69 @@ def _render_report_ui(spec: dict, dossier: dict, hypotheses: list[dict], candida
     hypothesis_items = "".join(
         f"<li>{html.escape(item['objective'])}</li>"
         for item in hypotheses
+    )
+
+    validation_block = (
+        "".join(
+            badge(f"{tool}: {status}", "good" if status == "pass" else ("bad" if status == "failed" else "warn"))
+            for tool, status in tool_statuses.items()
+        )
+        or badge("no tool records", "warn")
+    )
+
+    alphafold_card = (
+        f"""
+        <article class="card">
+          <div class="section-title">
+            <h2>AlphaFold Structure</h2>
+            {badge(tool_statuses.get('alphafold3', 'pending'), 'good' if tool_statuses.get('alphafold3') == 'pass' else ('bad' if tool_statuses.get('alphafold3') == 'failed' else 'warn'))}
+          </div>
+          <p class="muted">Predicted complex structure and scoring outputs from the AlphaFold validation stage.</p>
+          <div class="artifact-list">
+            <a class="artifact-link" href="{html.escape(alphafold_outputs['pdb'])}"><span>Predicted Complex PDB</span><span>.pdb</span></a>
+            {f'<a class="artifact-link" href="{html.escape(alphafold_outputs["scores"])}"><span>Score Summary</span><span>.json</span></a>' if alphafold_outputs.get('scores') else ''}
+          </div>
+        </article>
+        """
+        if alphafold_outputs.get("pdb")
+        else f"""
+        <article class="card">
+          <div class="section-title">
+            <h2>AlphaFold Structure</h2>
+            {badge(tool_statuses.get('alphafold3', 'pending'), 'good' if tool_statuses.get('alphafold3') == 'pass' else ('bad' if tool_statuses.get('alphafold3') == 'failed' else 'warn'))}
+          </div>
+          <p class="muted">No AlphaFold structure file is available in the current artifact bundle.</p>
+        </article>
+        """
+    )
+
+    top_candidate_block = (
+        f"""
+        <article class="card featured">
+          <div class="section-title">
+            <h2>Top Candidate</h2>
+            {badge(overall_status, "good" if overall_status == "complete" else "warn")}
+          </div>
+          <div class="featured-grid">
+            <div>
+              <div class="eyebrow">Candidate ID</div>
+              <h3 class="featured-title">{html.escape(primary['candidate_id'])}</h3>
+              <p class="muted">{html.escape(primary['parent_hypothesis'])}</p>
+            </div>
+            <div class="metric-block">
+              <div class="eyebrow">Score</div>
+              <p class="hero-score">{primary['final_score']}</p>
+            </div>
+          </div>
+          <div class="info-list">
+            <div><span>Why selected</span><strong>{html.escape(', '.join(primary['rationale']['why_selected']))}</strong></div>
+            <div><span>Validation</span><strong>{html.escape(', '.join(f"{k}: {v}" for k, v in primary['validation'].items()) or 'pending')}</strong></div>
+            <div><span>Risks</span><strong>{html.escape(', '.join(primary['rationale']['main_risks']))}</strong></div>
+          </div>
+        </article>
+        """
+        if primary
+        else '<article class="card featured"><h2>Top Candidate</h2><p>No candidates yet.</p></article>'
     )
 
     return f"""<!doctype html>
@@ -110,6 +217,13 @@ def _render_report_ui(spec: dict, dossier: dict, hypotheses: list[dict], candida
         display: grid; gap: 18px; margin-top: 22px;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       }}
+      .dashboard {{
+        display: grid;
+        gap: 18px;
+        grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+        margin-top: 18px;
+      }}
+      .stack {{ display: grid; gap: 18px; }}
       .card {{
         background: var(--panel);
         border: 1px solid var(--line);
@@ -124,6 +238,51 @@ def _render_report_ui(spec: dict, dossier: dict, hypotheses: list[dict], candida
       .candidate {{
         border-color: rgba(15,108,120,0.22);
         background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(238,246,246,0.92));
+      }}
+      .featured {{
+        background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,248,248,0.94));
+        border-color: rgba(15,108,120,0.26);
+      }}
+      .featured-grid {{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 180px;
+        gap: 20px;
+        align-items: end;
+      }}
+      .featured-title {{
+        margin: 6px 0 4px;
+        font-size: clamp(1.8rem, 3vw, 2.5rem);
+      }}
+      .metric-block {{
+        padding: 16px;
+        border-radius: 20px;
+        background: rgba(15,108,120,0.07);
+        border: 1px solid rgba(15,108,120,0.12);
+      }}
+      .hero-score {{
+        margin: 4px 0 0;
+        font-size: 3rem;
+        line-height: 0.95;
+        color: var(--accent-strong);
+        font-weight: 700;
+      }}
+      .info-list {{
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }}
+      .info-list div {{
+        display: grid;
+        gap: 4px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(17,34,45,0.08);
+      }}
+      .info-list span {{
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }}
       .candidate-head {{
         display: flex;
@@ -158,6 +317,42 @@ def _render_report_ui(spec: dict, dossier: dict, hypotheses: list[dict], candida
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 0.88rem;
       }}
+      .badge {{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.82rem;
+        border: 1px solid transparent;
+      }}
+      .badge-good {{ background: rgba(33, 125, 89, 0.12); color: #1f6a4d; border-color: rgba(33, 125, 89, 0.18); }}
+      .badge-warn {{ background: rgba(166, 75, 0, 0.12); color: #8a430b; border-color: rgba(166, 75, 0, 0.18); }}
+      .badge-bad {{ background: rgba(160, 33, 33, 0.12); color: #8f2222; border-color: rgba(160, 33, 33, 0.18); }}
+      .badge-neutral {{ background: rgba(17,34,45,0.08); color: #304651; border-color: rgba(17,34,45,0.1); }}
+      .artifact-list {{
+        display: grid;
+        gap: 10px;
+      }}
+      .artifact-link {{
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.7);
+        border: 1px solid rgba(17,34,45,0.08);
+        color: inherit;
+        text-decoration: none;
+      }}
+      .artifact-link:hover {{ background: rgba(15,108,120,0.08); }}
+      .artifact-link span:last-child {{
+        color: var(--accent-strong);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.82rem;
+      }}
       .banner {{
         min-width: 240px;
         padding: 18px 20px;
@@ -182,6 +377,7 @@ def _render_report_ui(spec: dict, dossier: dict, hypotheses: list[dict], candida
       @media (max-width: 760px) {{
         .hero-top {{ flex-direction: column; }}
         .banner {{ min-width: 0; width: 100%; }}
+        .dashboard, .featured-grid {{ grid-template-columns: 1fr; }}
       }}
     </style>
   </head>
@@ -220,41 +416,78 @@ def _render_report_ui(spec: dict, dossier: dict, hypotheses: list[dict], candida
         </div>
       </section>
 
+      <section class="dashboard">
+        <div class="stack">
+          {top_candidate_block}
+          <article class="card">
+            <div class="section-title">
+              <h2>Validation and Tool Status</h2>
+              {badge(spec['execution_mode'], 'neutral')}
+            </div>
+            <p>{validation_block}</p>
+          </article>
+          {alphafold_card}
+          <article class="card">
+            <div class="section-title">
+              <h2>Other Candidates</h2>
+              <span class="route">{len(top)} shown</span>
+            </div>
+            <div class="grid">
+              {''.join(candidate_cards[1:]) or '<p class="muted">Single-candidate run.</p>'}
+            </div>
+          </article>
+        </div>
+
+        <div class="stack">
+          <article class="card">
+            <div class="section-title">
+              <h2>Artifacts</h2>
+              {badge("machine-readable", "neutral")}
+            </div>
+            <div class="artifact-list">
+              <a class="artifact-link" href="{artifact_href('report')}"><span>Report</span><span>report.md</span></a>
+              <a class="artifact-link" href="{artifact_href('run_log')}"><span>Run Log</span><span>run_log.md</span></a>
+              <a class="artifact-link" href="{artifact_href('tool_invocations')}"><span>Tool Invocations</span><span>tool-invocations.json</span></a>
+              <a class="artifact-link" href="{artifact_href('target_dossier')}"><span>Target Dossier</span><span>target-dossier.json</span></a>
+            </div>
+          </article>
+          <article class="card">
+            <div class="section-title">
+              <h2>Hypothesis</h2>
+              <span class="route">{html.escape(hypotheses[0]['name']) if hypotheses else 'pending'}</span>
+            </div>
+            <ul>{hypothesis_items}</ul>
+          </article>
+          <article class="card">
+            <div class="section-title">
+              <h2>Literature</h2>
+              <span class="route">{len(dossier['literature'])} references</span>
+            </div>
+            <ul>{literature_items}</ul>
+          </article>
+          <article class="card">
+            <div class="section-title">
+              <h2>Route</h2>
+              <span class="route">{html.escape(primary['candidate_id']) if primary else 'no candidate'}</span>
+            </div>
+            <p>
+              <span class="route">RFdiffusion3</span>
+              <span class="route">LigandMPNN</span>
+              <span class="route">AlphaFold3</span>
+            </p>
+            <p class="footnote">This page is a static snapshot generated from campaign artifacts. It is presentation only and does not replace the underlying trace, provenance, or tool outputs.</p>
+          </article>
+        </div>
+      </section>
+
       <section class="grid">
         <article class="card">
           <div class="section-title">
-            <h2>Top Candidates</h2>
-            <span class="route">Ranked shortlist</span>
+            <h2>Executive Summary</h2>
+            {badge(target_identifier, "neutral")}
           </div>
-          <div class="grid">
-            {''.join(candidate_cards) or '<p>No candidates yet.</p>'}
-          </div>
-        </article>
-        <article class="card">
-          <div class="section-title">
-            <h2>Hypothesis</h2>
-            <span class="route">{html.escape(hypotheses[0]['name']) if hypotheses else 'pending'}</span>
-          </div>
-          <ul>{hypothesis_items}</ul>
-        </article>
-        <article class="card">
-          <div class="section-title">
-            <h2>Literature</h2>
-            <span class="route">{len(dossier['literature'])} references</span>
-          </div>
-          <ul>{literature_items}</ul>
-        </article>
-        <article class="card">
-          <div class="section-title">
-            <h2>Route</h2>
-            <span class="route">{html.escape(primary['candidate_id']) if primary else 'no candidate'}</span>
-          </div>
-          <p>
-            <span class="route">RFdiffusion3</span>
-            <span class="route">LigandMPNN</span>
-            <span class="route">AlphaFold3</span>
-          </p>
-          <p class="footnote">This page is a static snapshot generated from campaign artifacts. It is presentation only and does not replace the underlying trace, provenance, or tool outputs.</p>
+          <p>{html.escape(dossier['summary'])}</p>
+          <p class="footnote">Generated at {html.escape(manifest_time)}. Campaign scope, provenance, and trace are preserved in the linked artifacts above.</p>
         </article>
       </section>
     </main>
@@ -281,6 +514,14 @@ def write_artifacts(
     ui_slug = _campaign_ui_slug(spec["campaign_id"])
     ui_root = root / "site" / ui_slug
     ui_path = ui_root / "index.html"
+    alphafold_outputs = _find_alphafold_outputs(invocations, root)
+    artifact_links = {
+        "report": str(report_path.relative_to(root)),
+        "run_log": str(run_log_path.relative_to(root)),
+        "tool_invocations": str((campaign_root / "tool-invocations.json").relative_to(root)),
+        "target_dossier": str((campaign_root / "target-dossier.json").relative_to(root)),
+        "alphafold": alphafold_outputs,
+    }
 
     dump_json(campaign_root / "campaign-spec.json", spec)
     dump_json(campaign_root / "target-dossier.json", dossier)
@@ -356,7 +597,10 @@ def write_artifacts(
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
     ui_root.mkdir(parents=True, exist_ok=True)
-    ui_path.write_text(_render_report_ui(spec, dossier, hypotheses, candidates, utc_now()), encoding="utf-8")
+    ui_path.write_text(
+        _render_report_ui(spec, dossier, hypotheses, invocations, candidates, utc_now(), artifact_links),
+        encoding="utf-8",
+    )
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
