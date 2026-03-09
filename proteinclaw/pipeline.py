@@ -146,6 +146,7 @@ def run_campaign(
             )
         )
         selected_structure = hotspot_plan.get("preferred_structure") or dossier["structures"][0]["pdb_id"]
+        target_chain = hotspot_plan.get("target_chain") or "A"
         if hotspot_plan.get("target_input_pdb"):
             local_target_pdb = Path(hotspot_plan["target_input_pdb"])
             logger.event(f"Using planned target input structure `{local_target_pdb}` for hypothesis `{hypothesis['hypothesis_id']}`.")
@@ -171,7 +172,7 @@ def run_campaign(
                     "file_setting_key": "pdbFile",
                     "settings": {
                         "task": "Binder Design",
-                        "targetChains": ["A"],
+                        "targetChains": [target_chain],
                         "binderLength": hotspot_plan.get("binder_length", "20-30"),
                         "binderHotspots": hotspot_plan.get("binder_hotspots", {}),
                         "numDesigns": 10,

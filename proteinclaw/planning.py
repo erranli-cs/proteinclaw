@@ -11,6 +11,8 @@ from proteinclaw.env import get_env_value_any
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-1-20250805"
+OPENAI_API_URL = "https://api.openai.com/v1/responses"
+DEFAULT_OPENAI_MODEL = "gpt-5"
 
 TARGET_PROFILES = {
     "P04629": {
@@ -28,6 +30,10 @@ TARGET_PROFILES = {
 
 def has_anthropic_key(root: Path) -> bool:
     return bool(get_env_value_any(root, "ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "Antropic"))
+
+
+def has_openai_key(root: Path) -> bool:
+    return bool(get_env_value_any(root, "OPENAI_API_KEY"))
 
 
 def request_anthropic_plan(root: Path, prompt: str, context: str) -> str:
@@ -63,6 +69,53 @@ def request_anthropic_plan(root: Path, prompt: str, context: str) -> str:
     blocks = payload.get("content") or []
     text_parts = [block.get("text", "") for block in blocks if isinstance(block, dict) and block.get("type") == "text"]
     return "\n".join(part for part in text_parts if part).strip()
+
+
+def request_openai_plan(root: Path, prompt: str, context: str) -> str:
+    api_key = get_env_value_any(root, "OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("Missing OpenAI API key.")
+    model = get_env_value_any(root, "OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
+    body = json.dumps(
+        {
+            "model": model,
+            "input": f"Prompt:\n{prompt}\n\nContext:\n{context}",
+            "instructions": (
+                "You are planning a protein minibinder design campaign. "
+                "Write concise scientific planning notes with sections titled "
+                "Objective, Evidence, Hotspot Rationale, and Planned Route. "
+                "Do not invent experiments or structures not present in the input."
+            ),
+            "reasoning": {"effort": "medium"},
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        OPENAI_API_URL,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "content-type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if isinstance(payload.get("output_text"), str) and payload["output_text"].strip():
+        return payload["output_text"].strip()
+
+    text_parts: list[str] = []
+    for item in payload.get("output", []):
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content", []):
+            if not isinstance(content, dict):
+                continue
+            if content.get("type") == "output_text" and isinstance(content.get("text"), str):
+                text_parts.append(content["text"])
+    result = "\n".join(part.strip() for part in text_parts if part and part.strip()).strip()
+    if not result:
+        raise RuntimeError("OpenAI planning returned no text output.")
+    return result
 
 
 def _parse_pdb_atoms(pdb_path: Path) -> dict[tuple[str, int, str], list[tuple[float, float, float]]]:
@@ -143,6 +196,7 @@ def plan_campaign(
     campaign_root: Path,
 ) -> dict:
     profile = TARGET_PROFILES.get(spec["target"]["identifier"])
+    residue_constraints = spec.get("constraints", {}).get("target_residue_constraints") or []
     literature_support: list[dict] = []
     warnings: list[str] = []
     hotspot_plan = {
@@ -191,6 +245,28 @@ def plan_campaign(
         hotspot_plan["target_input_pdb"] = str(target_only)
         hotspot_plan["recommended_epitope"] = profile["recommended_epitope"]
         hotspot_plan["binder_length"] = profile["binder_length"]
+    elif spec["target"]["identifier"].startswith("PDB:"):
+        pdb_id = spec["target"].get("pdb_id") or spec["target"]["identifier"].split(":", 1)[1]
+        hotspot_plan["preferred_structure"] = pdb_id
+        if residue_constraints:
+            primary = residue_constraints[0]
+            hotspot_plan["target_chain"] = primary["chain"]
+            hotspot_plan["binder_hotspots"] = {primary["chain"]: str(primary["residue_number"])}
+            hotspot_plan["ranked_hotspots"] = [
+                {
+                    "chain": primary["chain"],
+                    "residue_number": primary["residue_number"],
+                    "residue_name": primary.get("residue_name") or "UNK",
+                    "contact_count": 1,
+                }
+            ]
+            hotspot_plan["recommended_epitope"] = (
+                f"Pocket around chain {primary['chain']} residue {primary['residue_number']}"
+            )
+            hotspot_plan["mechanism"] = (
+                f"Target the local pocket around chain {primary['chain']} residue {primary['residue_number']}."
+            )
+        hotspot_plan["binder_length"] = "35-55"
 
     context_lines = [
         f"Target dossier summary: {dossier['summary']}",
@@ -207,24 +283,49 @@ def plan_campaign(
                 for item in hotspot_plan["ranked_hotspots"]
             )
         )
+    if residue_constraints:
+        context_lines.append(
+            "User-specified residue constraints: "
+            + ", ".join(
+                f"chain {item['chain']} residue {item['residue_number']}"
+                + (f" {item['residue_name']}" if item.get("residue_name") else "")
+                for item in residue_constraints
+            )
+        )
     context = "\n".join(context_lines)
     provider = "deterministic"
+    hotspot_rationale = (
+        "Use the NGF-facing TrkA interface from 2IFG and prioritize residues "
+        + ", ".join(str(item["residue_number"]) for item in hotspot_plan["ranked_hotspots"])
+        + "."
+        if hotspot_plan["ranked_hotspots"] and profile
+        else (
+            "Bias designs toward the requested pocket residues: "
+            + ", ".join(
+                f"{item['chain']}{item['residue_number']}" + (f" {item['residue_name']}" if item.get("residue_name") else "")
+                for item in residue_constraints
+            )
+            + "."
+            if residue_constraints
+            else "No target-specific hotspot structure was configured, so the route remains generic."
+        )
+    )
     planning_markdown = (
         "### Objective\n"
         f"Design a minibinder antagonist for {spec['target']['name']}.\n\n"
         "### Evidence\n"
         f"{dossier['summary']}\n\n"
         "### Hotspot Rationale\n"
-        + (
-            "Use the NGF-facing TrkA interface from 2IFG and prioritize residues "
-            + ", ".join(str(item["residue_number"]) for item in hotspot_plan["ranked_hotspots"])
-            + "."
-            if hotspot_plan["ranked_hotspots"]
-            else "No target-specific hotspot structure was configured, so the route remains generic."
-        )
+        + hotspot_rationale
         + "\n\n### Planned Route\nUse literature-backed hotspot selection, then RFdiffusion3, LigandMPNN, and AlphaFold3 scoring."
     )
-    if has_anthropic_key(root):
+    if has_openai_key(root):
+        try:
+            planning_markdown = request_openai_plan(root, prompt, context)
+            provider = "openai"
+        except Exception as exc:
+            warnings.append(f"OpenAI planning failed: {exc}")
+    elif has_anthropic_key(root):
         try:
             planning_markdown = request_anthropic_plan(root, prompt, context)
             provider = "anthropic"

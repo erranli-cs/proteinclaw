@@ -14,6 +14,7 @@ from proteinclaw.dossier import _filter_literature_hits, build_target_dossier, w
 from proteinclaw.env import load_env
 from proteinclaw.learning import export_learning_dataset
 from proteinclaw.pipeline import run_campaign
+from proteinclaw.planning import plan_campaign
 from proteinclaw.scouting import run_heartbeat
 from proteinclaw.tamarind import TamarindError, request_text
 from proteinclaw.tooling import TOOL_REGISTRY, load_tool_registry, run_tool_adapter, select_route
@@ -34,6 +35,16 @@ class CampaignTests(unittest.TestCase):
         spec = build_campaign_spec("Please design a protein minibinder to tropomyosin receptor kinase A (TrkA; also known as NTRK1)")
         self.assertEqual(spec["target"]["identifier"], "P04629")
         self.assertEqual(spec["design_space"]["modality"], "mini-binder")
+
+    def test_pdb_target_defaults(self) -> None:
+        spec = build_campaign_spec(
+            "Design a penetrating binder for PDB 4RWS that can reach into the pocket interacting with chain A, residue 97 which should be an Aspartic acid"
+        )
+        self.assertEqual(spec["target"]["identifier"], "PDB:4RWS")
+        self.assertEqual(spec["target"]["pdb_id"], "4RWS")
+        self.assertEqual(spec["constraints"]["target_residue_constraints"][0]["chain"], "A")
+        self.assertEqual(spec["constraints"]["target_residue_constraints"][0]["residue_number"], 97)
+        self.assertEqual(spec["constraints"]["target_residue_constraints"][0]["residue_name"], "ASP")
 
     def test_clarifications_are_high_value_only(self) -> None:
         spec = build_campaign_spec("Design me a protein binder that inhibits HER2")
@@ -94,6 +105,17 @@ class CampaignTests(unittest.TestCase):
             self.assertIn("literature", dossier)
             self.assertGreaterEqual(len(dossier["literature"]), 2)
 
+    def test_pdb_dossier_fixture_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            spec = build_campaign_spec(
+                "Design a penetrating binder for PDB 4RWS that reaches chain A residue 97"
+            )
+            dossier = build_target_dossier(spec, root / ".cache" / "dossiers", use_fixture=True)
+            self.assertEqual(dossier["structures"][0]["pdb_id"], "4RWS")
+            self.assertEqual(dossier["annotations"]["pdb_id"], "4RWS")
+            self.assertTrue(dossier["annotations"]["sequence"])
+
     def test_literature_filter_prefers_target_relevant_hits(self) -> None:
         results = [
             {"title": "HER2-targeted nanobody binder synergizes with trastuzumab"},
@@ -140,6 +162,48 @@ class CampaignTests(unittest.TestCase):
             self.assertEqual(invocation["status"], "skipped")
             self.assertEqual(invocation["failure_codes"], ["license_blocked"])
             self.assertEqual(invocation["outputs"]["reason"], "license_blocked")
+
+    def test_plan_campaign_prefers_openai_when_key_present(self) -> None:
+        class MockResponse:
+            def __enter__(self) -> "MockResponse":
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return json.dumps({"output_text": "### Objective\nUse OpenAI planning output."}).encode("utf-8")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
+            spec = build_campaign_spec("Design me a protein binder that inhibits HER2")
+            dossier = build_target_dossier(spec, root / ".cache" / "dossiers", use_fixture=True)
+            campaign_root = root / "artifacts" / "campaigns" / spec["campaign_id"]
+            with mock.patch("urllib.request.urlopen", return_value=MockResponse()) as mocked_urlopen:
+                planning = plan_campaign(root, "Design me a protein binder that inhibits HER2", spec, dossier, campaign_root)
+            request = mocked_urlopen.call_args.args[0]
+            self.assertEqual(request.full_url, "https://api.openai.com/v1/responses")
+            self.assertEqual(planning["provider"], "openai")
+            self.assertIn("OpenAI planning output", planning["markdown"])
+
+    def test_end_to_end_pdb_campaign_writes_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_campaign(
+                prompt=(
+                    "Design a penetrating binder for PDB 4RWS that can reach into the pocket "
+                    "interacting with chain A residue 97 which should be an Aspartic acid"
+                ),
+                root=Path(tmpdir),
+                execution_mode="academic",
+                use_fixture=True,
+            )
+            self.assertEqual(result["campaign_spec"]["target"]["identifier"], "PDB:4RWS")
+            self.assertEqual(result["target_dossier"]["structures"][0]["pdb_id"], "4RWS")
+            self.assertEqual(Path(result["manifest"]["report_path"]).name, "report.md")
+            rfd3_invocation = next(item for item in result["tool_invocations"] if item["tool"] == "rfd3")
+            self.assertEqual(rfd3_invocation["inputs"]["settings"]["targetChains"], ["A"])
+            self.assertEqual(rfd3_invocation["inputs"]["settings"]["binderHotspots"], {"A": "97"})
 
     def test_tamarind_request_text_preserves_http_error_body(self) -> None:
         http_error = HTTPError(

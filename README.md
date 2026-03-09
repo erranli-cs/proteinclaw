@@ -12,6 +12,7 @@ This branch can submit the requested remote jobs through Tamarind when `TAMARIND
 - ranks candidates
 - writes a reproducible artifact package
 - supports interactive clarification capture
+- prefers OpenAI planning when `OPENAI_API_KEY` is configured locally, with Anthropic fallback
 - uses a versioned tool registry and honest adapter fallback behavior
 
 ## PicoClaw
@@ -37,6 +38,26 @@ Verify the workspace contract:
 
 ```bash
 ./scripts/verify_workspace.sh
+```
+
+Bootstrap the PicoClaw workspace locally:
+
+```bash
+./scripts/configure_picoclaw.sh
+```
+
+Launch a long-running campaign in the background for PicoClaw-friendly polling:
+
+```bash
+./scripts/start_picoclaw_campaign.sh \
+  --prompt "Design a protein binder for PDB 4RWS around chain A residue 97" \
+  --execution-mode academic
+```
+
+Check the latest campaign status:
+
+```bash
+./scripts/campaign_status.sh latest
 ```
 
 Run the demo campaign:

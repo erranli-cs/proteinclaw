@@ -30,6 +30,13 @@ Useful helper entrypoints may include:
 python3 -m proteinclaw plan --prompt "<user prompt>" --root .
 ```
 
+For long-running campaigns PicoClaw should prefer:
+
+```bash
+./scripts/start_picoclaw_campaign.sh --prompt "<user prompt>" --execution-mode academic
+./scripts/campaign_status.sh <campaign_id|latest>
+```
+
 and repo-local scripts under `scripts/`.
 
 Do not treat one wrapper command as the required workflow. PicoClaw should decide which tools to run, inspect their outputs, and assemble the final response honestly.
@@ -44,6 +51,7 @@ After a substantive run, always surface:
 
 If the run is still queued remotely, say so explicitly and provide the live `run_log.md` path.
 If a required tool failed, say so explicitly and point to the trace or invocation record.
+If a campaign may outlive a single tool call, launch it asynchronously and poll status instead of waiting on one blocking command.
 
 ## Clarification defaults
 
@@ -55,4 +63,4 @@ If a required tool failed, say so explicitly and point to the trace or invocatio
 
 - If PicoClaw is not installed, that is not a blocker for backend development.
 - If Tamarind is queued, do not claim the campaign finished.
-- If Anthropic planning fails, continue with deterministic planning and log the failure.
+- If OpenAI or Anthropic planning fails, continue with deterministic planning and log the failure.

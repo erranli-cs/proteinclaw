@@ -91,12 +91,46 @@ NTRK1_FIXTURE = {
     ],
 }
 BINDER_TERMS = ("binder", "binding", "antibody", "nanobody", "miniprotein", "protein")
+PDB_RESIDUE_MAP = {
+    "ALA": "A",
+    "ARG": "R",
+    "ASN": "N",
+    "ASP": "D",
+    "CYS": "C",
+    "GLN": "Q",
+    "GLU": "E",
+    "GLY": "G",
+    "HIS": "H",
+    "ILE": "I",
+    "LEU": "L",
+    "LYS": "K",
+    "MET": "M",
+    "PHE": "F",
+    "PRO": "P",
+    "SER": "S",
+    "THR": "T",
+    "TRP": "W",
+    "TYR": "Y",
+    "VAL": "V",
+}
+
+PDB_4RWS_FIXTURE = {
+    "entry": {
+        "struct": {"title": "4RWS structure fixture"},
+    },
+    "structures": [
+        {"pdb_id": "4RWS", "description": "4RWS structure fixture"},
+    ],
+    "literature": [],
+    "sequence": "M" * 120,
+}
 
 
 FIXTURES = {
     "P04626": HER2_FIXTURE,
     "P00533": EGFR_FIXTURE,
     "P04629": NTRK1_FIXTURE,
+    "PDB:4RWS": PDB_4RWS_FIXTURE,
 }
 
 
@@ -137,6 +171,12 @@ def download_pdb_file(pdb_id: str, output_path: Path) -> Path:
     with urllib.request.urlopen(request, timeout=30) as response:
         output_path.write_bytes(response.read())
     return output_path
+
+
+def fetch_pdb_entry(pdb_id: str) -> tuple[dict, dict]:
+    url = f"https://data.rcsb.org/rest/v1/core/entry/{urllib.parse.quote(pdb_id)}"
+    payload = _fetch_json(url)
+    return payload, {"source": "RCSB PDB entry", "identifier": pdb_id, "url": url, "retrieved_at": utc_now()}
 
 
 def write_fixture_pdb(output_path: Path, chain_id: str = "A") -> Path:
@@ -213,9 +253,34 @@ def _filter_literature_hits(results: list[dict], keywords: list[str], allow_unfi
     return results if allow_unfiltered_fallback else []
 
 
+def _extract_sequence_from_pdb(pdb_path: Path, preferred_chain: str | None = None) -> str:
+    seen: set[tuple[str, int]] = set()
+    residues: list[str] = []
+    for line in pdb_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if not line.startswith("ATOM"):
+            continue
+        chain_id = line[21].strip()
+        if preferred_chain and chain_id != preferred_chain:
+            continue
+        residue_name = line[17:20].strip().upper()
+        if residue_name not in PDB_RESIDUE_MAP:
+            continue
+        try:
+            residue_number = int(line[22:26].strip())
+        except ValueError:
+            continue
+        key = (chain_id, residue_number)
+        if key in seen:
+            continue
+        seen.add(key)
+        residues.append(PDB_RESIDUE_MAP[residue_name])
+    return "".join(residues)
+
+
 def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False) -> dict:
     identifier = spec["target"]["identifier"]
     target_name = spec["target"]["name"]
+    pdb_id = spec["target"].get("pdb_id") or (identifier.split(":", 1)[1] if identifier.startswith("PDB:") else None)
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{identifier}.json"
 
@@ -236,16 +301,57 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
 
     fixture = FIXTURES.get(identifier)
     if use_fixture:
-        uniprot_payload = (fixture or {}).get("uniprot", {})
-        structures = (fixture or {}).get("structures", [])
-        literature = (fixture or {}).get("literature", [])
-        sources.extend(
-            [
-                {"source": "bootstrap_fixture", "identifier": identifier, "retrieved_at": utc_now()},
-                {"source": "bootstrap_fixture", "identifier": "RCSB HER2 fixture", "retrieved_at": utc_now()},
-                {"source": "bootstrap_fixture", "identifier": "HER2 literature fixture", "retrieved_at": utc_now()},
-            ]
-        )
+        if identifier.startswith("PDB:"):
+            uniprot_payload = {}
+            structures = (fixture or {}).get("structures", [])
+            literature = (fixture or {}).get("literature", [])
+            sources.append({"source": "bootstrap_fixture", "identifier": identifier, "retrieved_at": utc_now()})
+            annotations["sequence"] = (fixture or {}).get("sequence")
+        else:
+            uniprot_payload = (fixture or {}).get("uniprot", {})
+            structures = (fixture or {}).get("structures", [])
+            literature = (fixture or {}).get("literature", [])
+            sources.extend(
+                [
+                    {"source": "bootstrap_fixture", "identifier": identifier, "retrieved_at": utc_now()},
+                    {"source": "bootstrap_fixture", "identifier": "RCSB HER2 fixture", "retrieved_at": utc_now()},
+                    {"source": "bootstrap_fixture", "identifier": "HER2 literature fixture", "retrieved_at": utc_now()},
+                ]
+            )
+            annotations["sequence"] = (fixture or {}).get("sequence")
+    elif identifier.startswith("PDB:") and pdb_id:
+        uniprot_payload = {}
+        try:
+            entry_payload, source_meta = fetch_pdb_entry(pdb_id)
+            sources.append(source_meta)
+            title = ((entry_payload.get("struct") or {}).get("title")) or f"PDB entry {pdb_id}"
+            structures = [{"pdb_id": pdb_id, "description": title}]
+        except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
+            warnings.append(f"RCSB entry retrieval failed: {exc}")
+            structures = (fixture or {}).get("structures", [{"pdb_id": pdb_id, "description": f"PDB entry {pdb_id}"}])
+            sources.append({"source": "bootstrap_fixture_fallback", "identifier": pdb_id, "retrieved_at": utc_now()})
+
+        target_chain = None
+        residue_constraints = spec.get("constraints", {}).get("target_residue_constraints") or []
+        if residue_constraints:
+            target_chain = residue_constraints[0].get("chain")
+        try:
+            pdb_cache_path = cache_dir / f"{pdb_id}.pdb"
+            download_pdb_file(pdb_id, pdb_cache_path)
+            sources.append(
+                {
+                    "source": "RCSB PDB file",
+                    "identifier": pdb_id,
+                    "url": f"https://files.rcsb.org/download/{pdb_id}.pdb",
+                    "retrieved_at": utc_now(),
+                }
+            )
+            annotations["sequence"] = _extract_sequence_from_pdb(pdb_cache_path, preferred_chain=target_chain) or _extract_sequence_from_pdb(
+                pdb_cache_path
+            )
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            warnings.append(f"PDB file download failed: {exc}")
+            annotations["sequence"] = (fixture or {}).get("sequence")
     else:
         try:
             uniprot_payload, source_meta = fetch_uniprot(identifier)
@@ -292,13 +398,17 @@ def build_target_dossier(spec: dict, cache_dir: Path, use_fixture: bool = False)
             (((uniprot_payload.get("proteinDescription") or {}).get("recommendedName") or {}).get("fullName") or {}).get("value")
         ),
         "organism": (uniprot_payload.get("organism") or {}).get("scientificName"),
-        "sequence": (uniprot_payload.get("sequence") or {}).get("value"),
+        "sequence": annotations.get("sequence") or (uniprot_payload.get("sequence") or {}).get("value"),
         "notes": [
             "Default target region is extracellular domain unless user specifies otherwise.",
             "Glycosylation and epitope accessibility should be checked during branch setup.",
         ],
         "literature_highlights": [item["title"] for item in literature[:3] if item.get("title")],
     }
+    if identifier.startswith("PDB:") and pdb_id:
+        annotations["pdb_id"] = pdb_id
+        annotations["recommended_name"] = annotations["recommended_name"] or ((fixture or {}).get("entry", {}).get("struct", {}).get("title"))
+        annotations["notes"].append("Target was resolved from a PDB identifier rather than UniProt.")
 
     dossier = {
         "schema_version": SCHEMA_VERSION,

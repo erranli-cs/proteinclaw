@@ -31,7 +31,8 @@
 - trka_20260308_212429
 
 ## Notes
-- Anthropic API key: present (claude-opus-4-1-20250805)
+- OpenAI API key: present
+- Anthropic API key: present as fallback
 - Tamarind API key: present
 - All three tools (rfd3, ligandmpnn, alphafold3) route via Tamarind
 - alphafold3 is academic-only (commercial_safe=false)

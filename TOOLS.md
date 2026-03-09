@@ -123,7 +123,8 @@ Allowed use:
 
 Current planning default:
 
-- Anthropic Opus API
+- OpenAI Responses API when `OPENAI_API_KEY` is configured
+- Anthropic Opus API as fallback
 
 Input shape:
 
