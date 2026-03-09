@@ -64,7 +64,7 @@ if run_log_path.exists():
         tamarind_job = job_matches[-1]
         tamarind_status = "submitted"
 
-report_status = "ready" if report_path.exists() else "pending"
+report_status = "completed" if report_path.exists() else "pending"
 tool_invocation_status = "ready" if tool_invocations_path.exists() else "pending"
 
 lines = [

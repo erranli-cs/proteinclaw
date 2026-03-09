@@ -7,6 +7,7 @@ cd "$repo_root"
 
 target="${1:-latest}"
 interval_seconds="${2:-30}"
+max_iterations="${3:-100}"
 model="${PICOCLAW_MODEL:-gpt-5.2}"
 session_prefix="${PICOCLAW_SESSION_PREFIX:-proteinclaw-watch}"
 
@@ -34,9 +35,11 @@ mkdir -p "$campaign_dir"
 
 echo "watching campaign_id=$campaign_id interval_seconds=$interval_seconds session=$session_name" | tee -a "$watch_log"
 
-while true; do
+iteration=0
+while (( iteration < max_iterations )); do
+  iteration=$((iteration + 1))
   status_output="$(./scripts/campaign_status.sh "$campaign_id")"
-  printf '[%s]\n%s\n\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$status_output" >>"$watch_log"
+  printf '[%s] iteration=%s/%s\n%s\n\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$iteration" "$max_iterations" "$status_output" >>"$watch_log"
 
   report_status="$(printf '%s\n' "$status_output" | awk -F= '/^report_status=/{print $2; exit}')"
   tamarind_status="$(printf '%s\n' "$status_output" | awk -F= '/^tamarind_status=/{print $2; exit}')"
@@ -44,23 +47,30 @@ while true; do
   report_path="$(printf '%s\n' "$status_output" | awk -F= '/^report_path=/{print $2; exit}')"
   tool_invocations_path="$(printf '%s\n' "$status_output" | awk -F= '/^tool_invocations_path=/{print $2; exit}')"
 
-  if [[ ! -f "$analysis_marker" ]] && { [[ "$report_status" == "ready" ]] || [[ "$tamarind_status" == "Complete" ]]; }; then
-    prompt="Check ./scripts/campaign_status.sh $campaign_id. Read $run_log_path"
-    if [[ -n "$report_path" ]]; then
-      prompt="$prompt, $report_path"
-    fi
-    if [[ -n "$tool_invocations_path" ]]; then
-      prompt="$prompt, and $tool_invocations_path"
-    fi
-    prompt="$prompt. Analyze the campaign results honestly. If outputs are partial, say what is missing and what the current Tamarind status implies."
+  if [[ "$report_status" == "completed" ]]; then
+    if [[ ! -f "$analysis_marker" ]]; then
+      prompt="Check ./scripts/campaign_status.sh $campaign_id. Read $run_log_path"
+      if [[ -n "$report_path" ]]; then
+        prompt="$prompt, $report_path"
+      fi
+      if [[ -n "$tool_invocations_path" ]]; then
+        prompt="$prompt, and $tool_invocations_path"
+      fi
+      prompt="$prompt. Analyze the campaign results honestly. If outputs are partial, say what is missing and what the current Tamarind status implies."
 
-    {
-      printf '[%s] triggering analysis\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-      picoclaw agent -s "$session_name" --model "$model" -m "$prompt"
-      touch "$analysis_marker"
-      printf '[%s] analysis complete\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-    } >>"$analysis_log" 2>&1 || true
+      {
+        printf '[%s] triggering analysis\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        picoclaw agent -s "$session_name" --model "$model" -m "$prompt"
+        touch "$analysis_marker"
+        printf '[%s] analysis complete\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      } >>"$analysis_log" 2>&1 || true
+    fi
+    break
   fi
 
   sleep "$interval_seconds"
 done
+
+if (( iteration >= max_iterations )); then
+  printf '[%s] max_iterations_reached=%s tamarind_status=%s report_status=%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$max_iterations" "$tamarind_status" "$report_status" >>"$watch_log"
+fi
