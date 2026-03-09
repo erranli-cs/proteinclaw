@@ -194,13 +194,14 @@ def run_campaign(
                     },
                 }
             else:
+                # AlphaFold3 adapter: Tamarind settings schema can vary; avoid passing
+                # unrecognized keys (e.g., "msaMode") that cause HTTP 400.
                 inputs = {
                     "hypothesis_id": hypothesis["hypothesis_id"],
                     "output_dir": str(tool_output_dir),
                     "settings": {
                         "sequence": f"{target_sequence}:{binder_sequence}" if target_sequence else binder_sequence,
                         "numModels": "1",
-                        "msaMode": "mmseqs2_uniref_env",
                         "numRecycles": 3,
                         "numRelax": 0,
                         "pairMode": "unpaired_paired",

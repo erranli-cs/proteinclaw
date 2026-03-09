@@ -6,6 +6,7 @@
     "schema_version": {"type": "string", "const": "2026-03-08"},
     "campaign_id": {"type": "string"},
     "report_path": {"type": "string"},
+    "ui_path": {"type": "string"},
     "artifact_paths": {"type": "object"},
     "top_candidates": {"type": "array", "items": {"type": "string"}},
     "generated_at": {"type": "string"}
